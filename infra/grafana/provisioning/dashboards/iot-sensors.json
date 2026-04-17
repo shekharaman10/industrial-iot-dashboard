@@ -1,0 +1,134 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": { "list": [] },
+  "description": "Industrial IoT — Vibration + Temperature sensor monitoring with anomaly overlay",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Active Devices",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red",   "value": 0 },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "auto" },
+      "targets": [{
+        "datasource": { "type": "influxdb", "uid": "InfluxDB-IoT" },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"sensor-readings\", tag: \"device_id\")\n  |> count()\n  |> map(fn: (r) => ({r with _value: r._value}))"
+      }]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Vibration RMS (m/s²) — All Devices",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "velocityms"
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "last"] }
+      },
+      "targets": [{
+        "datasource": { "type": "influxdb", "uid": "InfluxDB-IoT" },
+        "query": "from(bucket: \"sensor-readings\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"vibration\")\n  |> filter(fn: (r) => r._field == \"rms\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")"
+      }]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Temperature (°C) — All Devices",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "celsius",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": 0  },
+              { "color": "yellow", "value": 60 },
+              { "color": "red",    "value": 80 }
+            ]
+          }
+        }
+      },
+      "targets": [{
+        "datasource": { "type": "influxdb", "uid": "InfluxDB-IoT" },
+        "query": "from(bucket: \"sensor-readings\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"temperature\")\n  |> filter(fn: (r) => r._field == \"celsius\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")"
+      }]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Humidity (%)",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 1, "fillOpacity": 5, "showPoints": "never" },
+          "unit": "percent",
+          "min": 0, "max": 100
+        }
+      },
+      "targets": [{
+        "datasource": { "type": "influxdb", "uid": "InfluxDB-IoT" },
+        "query": "from(bucket: \"sensor-readings\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"temperature\")\n  |> filter(fn: (r) => r._field == \"humidity\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")"
+      }]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "tags": ["iot", "industrial", "predictive-maintenance"],
+  "templating": {
+    "list": [
+      {
+        "name": "device_id",
+        "label": "Device",
+        "type": "query",
+        "datasource": { "type": "influxdb", "uid": "InfluxDB-IoT" },
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"sensor-readings\", tag: \"device_id\")",
+        "multi": true,
+        "includeAll": true,
+        "allValue": "*"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Industrial IoT — Sensor Dashboard",
+  "version": 1
+}

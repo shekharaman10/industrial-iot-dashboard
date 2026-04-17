@@ -1,0 +1,20 @@
+# Grafana datasource auto-provisioning.
+# Loaded on startup — no manual UI setup needed.
+# Connects Grafana → InfluxDB 2.x using Flux query language.
+
+apiVersion: 1
+
+datasources:
+  - name:            InfluxDB-IoT
+    type:            influxdb
+    access:          proxy
+    url:             http://influxdb:8086
+    isDefault:       true
+    jsonData:
+      version:       Flux
+      organization:  iot-org
+      defaultBucket: sensor-readings
+      tlsSkipVerify: true
+    secureJsonData:
+      token:         dev-token-change-in-production
+    editable:        true

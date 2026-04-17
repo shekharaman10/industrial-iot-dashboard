@@ -1,0 +1,152 @@
+version: "3.9"
+
+# ─── Industrial IoT Dashboard — Docker Compose ───────────────────────────────
+#
+# Services:
+#   mosquitto   — MQTT broker (port 1883)
+#   influxdb    — Time-series DB for sensor readings (port 8086)
+#   postgres    — Relational DB for devices and alerts (port 5432)
+#   backend     — .NET API + workers (port 8080)
+#   frontend    — React dashboard via nginx (port 3000)
+#
+# Startup order enforced via depends_on + healthchecks.
+# Backend won't start until both DBs pass health checks.
+
+networks:
+  iot_net:
+    driver: bridge
+
+volumes:
+  mosquitto_data:
+  influxdb_data:
+  postgres_data:
+
+services:
+
+  # ── MQTT Broker ─────────────────────────────────────────────────────────────
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: iot-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"    # MQTT (edge devices + backend)
+      - "9001:9001"    # WebSocket (browser debug)
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+    networks: [iot_net]
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "healthcheck", "-m", "ping", "-q", "0"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── InfluxDB ─────────────────────────────────────────────────────────────────
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: iot-influxdb
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE:        setup
+      DOCKER_INFLUXDB_INIT_USERNAME:    admin
+      DOCKER_INFLUXDB_INIT_PASSWORD:    adminpassword
+      DOCKER_INFLUXDB_INIT_ORG:         iot-org
+      DOCKER_INFLUXDB_INIT_BUCKET:      sensor-readings
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: dev-token-change-in-production
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    networks: [iot_net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: iot-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB:       iotdb
+      POSTGRES_USER:     iot
+      POSTGRES_PASSWORD: iot_secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks: [iot_net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iot -d iotdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── .NET Backend ─────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: iot-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT:          Development
+      Mqtt__Host:                      mosquitto
+      Mqtt__Port:                      1883
+      InfluxDb__Url:                   http://influxdb:8086
+      InfluxDb__Token:                 dev-token-change-in-production
+      InfluxDb__Org:                   iot-org
+      InfluxDb__Bucket:                sensor-readings
+      Postgres__ConnectionString:      "Host=postgres;Port=5432;Database=iotdb;Username=iot;Password=iot_secret"
+      AllowedOrigins__0:               http://localhost:3000
+    depends_on:
+      mosquitto: { condition: service_healthy }
+      influxdb:  { condition: service_healthy }
+      postgres:  { condition: service_healthy }
+    networks: [iot_net]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # ── React Frontend ───────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL:     http://localhost:8080
+        VITE_SIGNALR_URL: http://localhost:8080/hubs/sensors
+    container_name: iot-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      backend: { condition: service_healthy }
+    networks: [iot_net]
+
+  # ── Grafana (optional — pre-wired to InfluxDB) ───────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4-ubuntu
+    container_name: iot-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER:     admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP:     "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      influxdb: { condition: service_healthy }
+    networks: [iot_net]
+    profiles: ["monitoring"]   # opt-in: `docker compose --profile monitoring up`

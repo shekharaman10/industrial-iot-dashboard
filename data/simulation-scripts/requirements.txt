@@ -1,0 +1,4 @@
+# ─── Simulator dependencies ──────────────────────────────────────────────────
+# Install with: pip install -r requirements.txt
+
+paho-mqtt>=1.6.1,<3.0.0   # MQTT client library

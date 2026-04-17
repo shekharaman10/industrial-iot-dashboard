@@ -1,0 +1,62 @@
+# ── .NET ─────────────────────────────────────────────────────────────
+**/bin/
+**/obj/
+**/*.user
+**/.vs/
+**/out/
+**/publish/
+**/TestResults/
+**/coverage-report/
+**/*.trx
+**/*.cobertura.xml
+*.coverage
+*.coverlet
+
+# ── Node / Frontend ──────────────────────────────────────────────────
+**/node_modules/
+**/dist/
+**/.vite/
+frontend/.env
+frontend/.env.local
+
+# ── PlatformIO / ESP32 ───────────────────────────────────────────────
+edge/firmware/.pio/
+edge/firmware/.vscode/
+**/*.bin
+**/*.elf
+**/*.map
+
+# ── Docker ──────────────────────────────────────────────────────────
+infra/mosquitto/data/
+infra/mosquitto/log/
+**/docker-compose.override.yml
+**/*.env.docker
+
+# ── Python ──────────────────────────────────────────────────────────
+**/__pycache__/
+**/*.pyc
+**/.venv/
+
+# ── Logs / Temp ─────────────────────────────────────────────────────
+**/*.log
+logs/
+tmp/
+temp/
+
+# ── Secrets (never commit) ──────────────────────────────────────────
+**/appsettings.Production.json
+**/*.pfx
+**/*.key
+.env
+.env.*
+
+# ── IDE ─────────────────────────────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+.DS_Store
+Thumbs.db
+CLAUDE.md
+IoT_Dashboard_Complete_Report.docx
