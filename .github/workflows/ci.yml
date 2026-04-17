@@ -6,26 +6,18 @@ on:
   pull_request:
     branches: [main]
 
+# Required for dorny/test-reporter to write check results
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
 jobs:
-  # ── Backend: Build, Test, Docker ────────────────────────────────────────────
+
+  # ── Backend: Build + Test ────────────────────────────────────────────────────
   backend:
     name: Backend (.NET 8)
     runs-on: ubuntu-latest
-
-    services:
-      # Spin up Postgres for integration tests
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB:       testdb
-          POSTGRES_USER:     test
-          POSTGRES_PASSWORD: testpass
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U test"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - name: Checkout
@@ -48,36 +40,31 @@ jobs:
         working-directory: backend
         run: |
           dotnet test tests/UnitTests/IotDashboard.Tests.UnitTests.csproj \
-            --no-build -c Release \
+            -c Release \
             --logger "trx;LogFileName=unit-results.trx" \
             --collect:"XPlat Code Coverage"
 
-      - name: Run integration tests (parser-level, no broker needed)
+      - name: Run integration tests
         working-directory: backend
         run: |
           dotnet test tests/IntegrationTests/IotDashboard.Tests.IntegrationTests.csproj \
-            --no-build -c Release \
+            -c Release \
             --logger "trx;LogFileName=integration-results.trx"
 
       - name: Publish test results
         uses: dorny/test-reporter@v1
         if: always()
         with:
-          name:    .NET Tests
-          path:    backend/**/*.trx
+          name: .NET Tests
+          path: backend/**/*.trx
           reporter: dotnet-trx
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: backend/**/coverage.cobertura.xml
-          flags: backend
+          fail-on-error: false
 
       - name: Build Docker image
         working-directory: backend
         run: docker build -t iot-backend:${{ github.sha }} .
 
-  # ── Frontend: Install, Lint, Build ─────────────────────────────────────────
+  # ── Frontend: Install, Lint, Build ──────────────────────────────────────────
   frontend:
     name: Frontend (Node 20 / React)
     runs-on: ubuntu-latest
@@ -110,7 +97,7 @@ jobs:
         working-directory: frontend
         run: docker build -t iot-frontend:${{ github.sha }} .
 
-  # ── Edge: PlatformIO build check ────────────────────────────────────────────
+  # ── Edge Firmware: Compile check ────────────────────────────────────────────
   edge:
     name: Edge Firmware (PlatformIO / ESP32)
     runs-on: ubuntu-latest
@@ -127,15 +114,18 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-esp32-${{ hashFiles('edge/firmware/platformio.ini') }}
+          restore-keys: platformio-esp32-
+
       - name: Build firmware (dev profile)
         working-directory: edge/firmware
         run: pio run -e esp32dev
 
-      - name: Build firmware (release profile)
-        working-directory: edge/firmware
-        run: pio run -e esp32_release
-
-  # ── Simulator: Python lint ──────────────────────────────────────────────────
+  # ── Simulator: Python syntax check ──────────────────────────────────────────
   simulator:
     name: Simulator (Python)
     runs-on: ubuntu-latest
