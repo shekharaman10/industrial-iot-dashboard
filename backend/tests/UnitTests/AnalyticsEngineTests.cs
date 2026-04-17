@@ -112,12 +112,24 @@ public sealed class AnalyticsEngineTests
     [Fact]
     public void ResetDevice_ClearsState()
     {
+        // Warm up so engine has a full baseline
         WarmUp("device-reset", 9.81f, 50);
+
+        // Confirm it can detect anomalies before reset
+        var beforeReset = _engine.Evaluate("device-reset", 98.1f, SensorType.VibrationRms);
+        Assert.True(beforeReset.IsAnomaly, "Should detect anomaly before reset");
+
+        // Reset clears the state
         _engine.ResetDevice("device-reset");
 
-        // After reset, first sample — SampleCount must be 1
-        var result = _engine.Evaluate("device-reset", 9.81f, SensorType.VibrationRms);
-        Assert.Equal(1, result.SampleCount);
+        // After reset: engine has no history, so it cannot evaluate anomalies
+        // Feed 9 samples — all should return IsAnomaly=false (insufficient data)
+        for (int i = 0; i < 9; i++)
+        {
+            var result = _engine.Evaluate("device-reset", 98.1f, SensorType.VibrationRms);
+            Assert.False(result.IsAnomaly,
+                $"After reset, sample {i + 1} should not be anomaly (insufficient data)");
+        }
     }
 
     [Fact]
