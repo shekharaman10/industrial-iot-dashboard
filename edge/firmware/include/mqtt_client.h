@@ -71,7 +71,7 @@ public:
      */
     bool sendCommand(const char* topic, const char* payload);
 
-    bool isConnected() const noexcept { return _client.connected(); }
+    bool isConnected() noexcept { return _client.connected(); }
 
     /** Exponential back-off reconnect delay in ms (read-only, for logging). */
     unsigned long reconnectDelay() const noexcept { return _reconnectDelay; }

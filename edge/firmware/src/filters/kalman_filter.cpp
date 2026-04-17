@@ -5,39 +5,33 @@ KalmanFilter::KalmanFilter(float processNoise,
                            float estimatedError) noexcept
     : _Q(processNoise)
     , _R(measurementNoise)
-    , _P(estimatedError)
+    , _P_err(estimatedError)
     , _K(0.0f)
-    , _X(0.0f)
+    , _X_est(0.0f)
     , _initialized(false)
 {}
 
 float KalmanFilter::update(float measurement) noexcept {
     if (!_initialized) {
-        _X           = measurement;
+        _X_est       = measurement;
         _initialized = true;
-        return _X;
+        return _X_est;
     }
 
-    // ── Prediction ──────────────────────────────────────────────────────────
-    // Project error covariance forward: P = P + Q
-    _P += _Q;
+    // Prediction
+    _P_err += _Q;
 
-    // ── Update ───────────────────────────────────────────────────────────────
-    // Compute Kalman gain:   K = P / (P + R)
-    _K = _P / (_P + _R);
+    // Update
+    _K     = _P_err / (_P_err + _R);
+    _X_est = _X_est + _K * (measurement - _X_est);
+    _P_err = (1.0f - _K) * _P_err;
 
-    // Update estimate:       X = X + K * (measurement - X)
-    _X = _X + _K * (measurement - _X);
-
-    // Update error:          P = (1 - K) * P
-    _P = (1.0f - _K) * _P;
-
-    return _X;
+    return _X_est;
 }
 
 void KalmanFilter::reset() noexcept {
     _initialized = false;
-    _P           = 1.0f;
+    _P_err       = 1.0f;
     _K           = 0.0f;
-    _X           = 0.0f;
+    _X_est       = 0.0f;
 }

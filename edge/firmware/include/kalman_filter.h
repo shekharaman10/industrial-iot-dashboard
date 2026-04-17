@@ -44,8 +44,8 @@ public:
 private:
     const float _Q;          ///< Process noise covariance (const after construction)
     const float _R;          ///< Measurement noise covariance (const after construction)
-    float       _P;          ///< Estimation error covariance (updated each step)
+    float       _P_err;      ///< Estimation error covariance (updated each step)
     float       _K;          ///< Kalman gain
-    float       _X;          ///< State estimate (filtered output)
+    float       _X_est;      ///< State estimate (filtered output)
     bool        _initialized;
 };

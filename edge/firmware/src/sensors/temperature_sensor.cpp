@@ -13,7 +13,7 @@ bool TemperatureSensor::begin() {
     // DHT22 has no I2C address; we verify it on first successful read.
     // Set online optimistically — read() sets valid=false on NaN.
     _online = true;
-    Serial.println(F("[TemperatureSensor] OK — DHT22 on pin " STRINGIFY(TEMP_SENSOR_PIN)));
+    Serial.println(F("[TemperatureSensor] OK — DHT22 initialized"));
     return true;
 }
 
