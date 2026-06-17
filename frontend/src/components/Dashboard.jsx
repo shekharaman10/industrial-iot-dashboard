@@ -49,15 +49,28 @@ function ConnectionBadge({ status, T }) {
       role="status"
       aria-label={`Connection status: ${status}`}
       aria-live="polite"
-      style={{ display: "flex", alignItems: "center", gap: 6 }}
+      style={{
+        display: "flex", alignItems: "center", gap: 6,
+        background: `${color}12`,
+        border: `1px solid ${color}35`,
+        borderRadius: 4, padding: "3px 10px",
+      }}
     >
       <span style={{
         display: "inline-block", width: 7, height: 7, borderRadius: "50%",
         background: color,
         boxShadow: status === "Connected" ? `0 0 6px ${color}` : "none",
-        animation: status === "Connected" ? "led-pulse 2s infinite" : "none",
+        animation: status === "Connected"
+          ? "led-pulse 2s infinite"
+          : status === "Reconnecting"
+          ? "spin 1.2s linear infinite"
+          : "none",
+        flexShrink: 0,
       }} />
-      <span style={{ fontFamily: "IBM Plex Mono", fontSize: 11, color, letterSpacing: "0.06em" }}>
+      <span style={{
+        fontFamily: "IBM Plex Mono", fontSize: 10, color,
+        letterSpacing: "0.08em", fontWeight: 600,
+      }}>
         {status.toUpperCase()}
       </span>
     </div>
@@ -71,33 +84,37 @@ function MetricCard({ label, value, unit, color, sublabel, anomaly, T }) {
       role={anomaly ? "alert" : "status"}
       aria-label={`${label}: ${value ?? "no data"}${unit ? " " + unit : ""}${anomaly ? ", anomaly detected" : ""}`}
       style={{
-        background: T.bg2,
-        border: `1px solid ${anomaly ? T.fault + "80" : T.border}`,
-        borderTop: `2px solid ${anomaly ? T.fault : cardColor}`,
-        borderRadius: 4, padding: "14px 18px",
-        minWidth: 148,
-        transition: "border-color 0.2s, background 0.2s",
+        background: T.bg1,
+        border: `1px solid ${anomaly ? T.fault + "60" : T.border}`,
+        borderTop: `3px solid ${anomaly ? T.fault : cardColor}`,
+        borderRadius: 4, padding: "12px 16px",
+        minWidth: 150,
+        transition: "border-color 0.25s, background 0.25s",
+        boxShadow: anomaly ? `0 0 0 1px ${T.fault}20` : "none",
       }}
     >
-      {anomaly && (
-        <div style={{
-          fontSize: 9, fontFamily: "IBM Plex Mono", color: T.fault,
-          letterSpacing: "0.08em", marginBottom: 4,
-          animation: "blink 1s step-start infinite",
-        }} aria-hidden="true">
-          ⚠ ANOMALY
-        </div>
-      )}
       <div style={{
-        fontSize: 9, fontFamily: "IBM Plex Mono", color: T.text2,
-        letterSpacing: "0.1em", marginBottom: 6, textTransform: "uppercase",
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        marginBottom: 8,
       }}>
-        {label}
+        <div style={{
+          fontSize: 9, fontFamily: "IBM Plex Mono", color: T.text2,
+          letterSpacing: "0.12em", textTransform: "uppercase",
+        }}>
+          {label}
+        </div>
+        {anomaly && (
+          <div style={{
+            fontSize: 8, fontFamily: "IBM Plex Mono", color: T.fault,
+            letterSpacing: "0.08em", animation: "blink 1s step-start infinite",
+          }} aria-hidden="true">⚠ ANOM</div>
+        )}
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
         <span style={{
-          fontFamily: "IBM Plex Mono", fontWeight: 700, fontSize: 24,
-          color: anomaly ? T.fault : cardColor, transition: "color 0.2s",
+          fontFamily: "IBM Plex Mono", fontWeight: 700, fontSize: 22,
+          color: anomaly ? T.fault : cardColor, transition: "color 0.25s",
+          fontVariantNumeric: "tabular-nums",
         }}>
           {value ?? "—"}
         </span>
@@ -117,22 +134,27 @@ function SectionLabel({ icon, children, count, T }) {
     <div style={{
       display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
     }}>
+      <span style={{
+        display: "inline-block", width: 3, height: 14,
+        background: T.brand, borderRadius: 2, flexShrink: 0,
+      }} aria-hidden="true" />
       {icon && (
         <span style={{
-          fontFamily: "IBM Plex Mono", fontSize: 12, color: T.brand,
+          fontFamily: "IBM Plex Mono", fontSize: 11, color: T.brand,
         }}>{icon}</span>
       )}
       <span style={{
         fontSize: 10, fontFamily: "IBM Plex Mono", fontWeight: 700,
-        color: T.text2, letterSpacing: "0.15em", textTransform: "uppercase",
+        color: T.text1, letterSpacing: "0.12em", textTransform: "uppercase",
       }}>
         {children}
       </span>
       {count != null && (
         <span style={{
           fontSize: 9, fontFamily: "IBM Plex Mono",
-          color: T.accent, border: `1px solid ${T.accent}40`,
-          borderRadius: 3, padding: "0 5px",
+          color: T.accent, background: `${T.accent}18`,
+          border: `1px solid ${T.accent}40`,
+          borderRadius: 10, padding: "0 6px",
         }}>
           {count}
         </span>
@@ -169,10 +191,17 @@ function Skeleton({ height, T }) {
       role="progressbar"
       aria-label="Loading chart data"
       style={{
-        height, background: T.bg3, borderRadius: 4,
-        animation: "fade-in 1.5s ease-in-out infinite alternate",
+        height, background: T.bg2, borderRadius: 4,
+        position: "relative", overflow: "hidden",
       }}
-    />
+    >
+      <div style={{
+        position: "absolute", inset: 0,
+        background: `linear-gradient(90deg, transparent 0%, ${T.border}40 50%, transparent 100%)`,
+        animation: "shimmer 1.6s ease-in-out infinite",
+        backgroundSize: "200% 100%",
+      }} />
+    </div>
   );
 }
 
@@ -234,61 +263,67 @@ export default function Dashboard() {
       transition: "background 0.2s, color 0.2s",
     }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 2px; }
-        @keyframes led-pulse { 0%,100%{opacity:1} 50%{opacity:.7} }
-        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-        @keyframes fade-in { 0%{opacity:.4} 100%{opacity:.7} }
-        @keyframes card-in { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { background: ${T.bg0}; }
+        button { outline: none; font-family: inherit; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: ${T.bg0}; }
+        ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: ${T.text2}; }
+        @keyframes led-pulse { 0%,100%{opacity:1;box-shadow:0 0 4px currentColor} 50%{opacity:.65;box-shadow:none} }
+        @keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+        @keyframes shimmer { 0%{opacity:.3} 50%{opacity:.6} 100%{opacity:.3} }
+        @keyframes card-in { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
       `}</style>
 
       {/* ── HEADER ──────────────────────────────────────────────────────── */}
       <header
         role="banner"
-        aria-label="Emerson Ovation IoT Dashboard"
+        aria-label="Industrial IoT Dashboard"
         style={{
           background: T.bg1,
           borderBottom: `1px solid ${T.border}`,
           borderLeft: `4px solid ${T.brand}`,
-          padding: "0 28px",
-          height: 56,
+          padding: "0 24px",
+          height: 54,
           display: "flex", alignItems: "center",
           gap: 20, position: "sticky", top: 0, zIndex: 100,
           boxShadow: T.shadowSm,
-          transition: "background 0.2s, border-color 0.2s",
+          transition: "background 0.25s, border-color 0.25s",
         }}
       >
         {/* Left: Logo + Title */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1 }}>
           <div style={{
-            width: 30, height: 30, borderRadius: 4,
-            background: T.brand,
+            width: 32, height: 32, borderRadius: 6,
+            background: `linear-gradient(135deg, ${T.brand}, ${T.accent})`,
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 16, color: "#fff", fontWeight: 700, flexShrink: 0,
-          }} aria-hidden="true">◈</div>
+            fontSize: 15, color: "#fff", fontWeight: 700, flexShrink: 0,
+            boxShadow: `0 0 10px ${T.brand}44`,
+          }} aria-hidden="true">⬡</div>
           <div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{
-                fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600,
-                fontSize: 14, color: T.brand, letterSpacing: "0.08em",
+                fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 700,
+                fontSize: 15, color: T.text0, letterSpacing: "0.05em",
               }}>
-                EMERSON
+                IIoT<span style={{ color: T.brand }}> Monitor</span>
               </span>
               <span style={{
-                fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600,
-                fontSize: 14, color: T.text0, letterSpacing: "0.04em",
-              }}>
-                OVATION™ IoT
-              </span>
+                fontSize: 9, fontFamily: "IBM Plex Mono",
+                color: T.accent, background: `${T.accent}18`,
+                border: `1px solid ${T.accent}40`,
+                borderRadius: 3, padding: "1px 6px",
+                letterSpacing: "0.06em",
+              }}>v2.1.0</span>
             </div>
             <div style={{
-              fontSize: 10, fontFamily: "IBM Plex Mono", color: T.text2,
-              letterSpacing: "0.08em",
+              fontSize: 9, fontFamily: "IBM Plex Mono", color: T.text2,
+              letterSpacing: "0.1em", marginTop: 1,
             }}>
-              Predictive Maintenance System v2.1.0
+              PREDICTIVE MAINTENANCE SYSTEM
             </div>
           </div>
         </div>
@@ -314,40 +349,34 @@ export default function Dashboard() {
 
           <ConnectionBadge status={connectionStatus} T={T} />
 
-          <div style={{
-            fontSize: 10, fontFamily: "IBM Plex Mono", color: T.text2,
-            letterSpacing: "0.04em",
-          }} aria-hidden="true">
-            {now.toLocaleString()}
-          </div>
-
           {/* Theme toggle */}
           <button
             onClick={toggleTheme}
             aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
             title={isDark ? "Switch to light mode" : "Switch to dark mode"}
             style={{
-              width: 36, height: 36, borderRadius: "50%",
+              width: 34, height: 34, borderRadius: "50%",
               border: `1px solid ${T.border}`,
-              background: "transparent",
+              background: T.bg2,
               cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 16,
+              fontSize: 15,
               color: T.text1,
               transition: "all 0.2s",
+              flexShrink: 0,
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.borderColor = T.brand;
               e.currentTarget.style.color = T.brand;
-              e.currentTarget.style.background = T.bg3;
+              e.currentTarget.style.background = `${T.brand}18`;
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.borderColor = T.border;
               e.currentTarget.style.color = T.text1;
-              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.background = T.bg2;
             }}
           >
-            {isDark ? "☀" : "☾"}
+            {isDark ? "☀" : "☽"}
           </button>
         </div>
       </header>
@@ -356,23 +385,20 @@ export default function Dashboard() {
       <div style={{
         background: T.bg1,
         borderBottom: `1px solid ${T.border}`,
-        padding: "6px 28px",
-        display: "flex", alignItems: "center", gap: 16,
+        padding: "5px 24px",
+        display: "flex", alignItems: "center", gap: 14,
         fontSize: 10, fontFamily: "IBM Plex Mono",
-        transition: "background 0.2s",
+        transition: "background 0.25s",
+        letterSpacing: "0.05em",
       }}>
-        {/* Device counts */}
-        <span style={{ color: T.text2 }}>NODES:</span>
+        <span style={{ color: T.text2, fontSize: 9 }}>NODES</span>
         <RibbonDot color={T.online}  label={`${onlineCount} Online`}  T={T} />
         <RibbonDot color={T.stale}   label={`${staleCount} Stale`}    T={T} />
         <RibbonDot color={T.offline} label={`${offlineCount} Offline`} T={T} />
-
         <RibbonSep T={T} />
-
-        {/* Alert counts */}
-        <span style={{ color: T.text2 }}>ALERTS:</span>
+        <span style={{ color: T.text2, fontSize: 9 }}>ALERTS</span>
         {faultCount === 0 && critCount === 0 && warnCount === 0 ? (
-          <span style={{ color: T.online, fontWeight: 700 }}>All nominal</span>
+          <span style={{ color: T.online, fontWeight: 700, fontSize: 9 }}>● ALL NOMINAL</span>
         ) : (
           <>
             {faultCount > 0 && <RibbonDot color={T.fault}    label={`${faultCount} Fault`}    T={T} />}
@@ -380,14 +406,18 @@ export default function Dashboard() {
             {warnCount  > 0 && <RibbonDot color={T.warning}  label={`${warnCount} Warning`}   T={T} />}
           </>
         )}
-
         <RibbonSep T={T} />
-
-        <span style={{ color: T.text2 }}>PEAK VIB:</span>
-        <span style={{ color: T.text1 }}>{peakVib} {peakVib !== "—" ? "m/s²" : ""}</span>
+        <span style={{ color: T.text2, fontSize: 9 }}>PEAK VIB</span>
+        <span style={{ color: T.vib, fontVariantNumeric: "tabular-nums" }}>
+          {peakVib}{peakVib !== "—" ? " m/s²" : ""}
+        </span>
+        <div style={{ flex: 1 }} />
+        <span style={{ color: T.text2, fontSize: 9 }}>
+          {now.toLocaleDateString()} {now.toLocaleTimeString()}
+        </span>
       </div>
 
-      <main style={{ padding: "18px 28px", display: "grid", gap: 16 }}>
+      <main style={{ padding: "16px 24px", display: "grid", gap: 14 }}>
 
         {/* ── EQUIPMENT NODES ──────────────────────────────────────────── */}
         <section
@@ -403,8 +433,25 @@ export default function Dashboard() {
           </SectionLabel>
 
           {deviceList.length === 0 ? (
-            <div style={{ fontSize: 12, fontFamily: "IBM Plex Mono", color: T.text2, padding: "8px 0" }}>
-              No devices registered. Start the simulator or connect an ESP32.
+            <div style={{
+              display: "flex", alignItems: "center", gap: 14,
+              padding: "16px 20px",
+              background: T.bg2, borderRadius: 4, border: `1px dashed ${T.border}`,
+            }}>
+              <span style={{
+                fontSize: 22, opacity: 0.35, animation: "shimmer 2s infinite",
+              }}>⬡</span>
+              <div>
+                <div style={{
+                  fontSize: 11, fontFamily: "IBM Plex Mono", color: T.text1,
+                  marginBottom: 3,
+                }}>
+                  No equipment nodes registered
+                </div>
+                <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: T.text2 }}>
+                  Run the sensor simulator or connect an ESP32 device to begin.
+                </div>
+              </div>
             </div>
           ) : (
             <div style={{
@@ -427,7 +474,7 @@ export default function Dashboard() {
 
         {/* ── SELECTED DEVICE DETAIL ───────────────────────────────────── */}
         {selectedId && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 14 }}>
 
             {/* LEFT COLUMN */}
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -594,12 +641,13 @@ export default function Dashboard() {
 
 function RibbonDot({ color, label, T }) {
   return (
-    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+    <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
       <span style={{
         width: 6, height: 6, borderRadius: "50%",
         background: color, flexShrink: 0,
+        boxShadow: `0 0 4px ${color}80`,
       }} />
-      <span style={{ color: T.text1 }}>{label}</span>
+      <span style={{ color: T.text1, fontSize: 10 }}>{label}</span>
     </span>
   );
 }

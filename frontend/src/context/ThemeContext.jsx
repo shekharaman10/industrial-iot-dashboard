@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
 import { dark, light } from "../utils/theme";
 
 const ThemeContext = createContext({ T: dark, isDark: true, toggleTheme: () => {} });
@@ -6,7 +6,17 @@ const ThemeContext = createContext({ T: dark, isDark: true, toggleTheme: () => {
 export const useTheme = () => useContext(ThemeContext);
 
 export function ThemeProvider({ children }) {
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark] = useState(() => {
+    try { return localStorage.getItem("iot-theme") !== "light"; }
+    catch { return true; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem("iot-theme", isDark ? "dark" : "light"); }
+    catch {}
+    document.documentElement.style.background = isDark ? dark.bg0 : light.bg0;
+  }, [isDark]);
+
   return (
     <ThemeContext.Provider value={{ T: isDark ? dark : light, isDark, toggleTheme: () => setIsDark(d => !d) }}>
       {children}

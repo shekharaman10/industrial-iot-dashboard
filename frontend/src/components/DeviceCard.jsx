@@ -49,12 +49,13 @@ const DeviceCard = memo(function DeviceCard({ device, latestFrame, isSelected, o
       aria-pressed={isSelected}
       aria-label={`Device ${device.id} — ${device.status}${worstSeverity ? `, ${worstSeverity} alert` : ""}`}
       style={{
-        background    : isSelected ? T.bg3 : T.bg2,
+        background    : isSelected ? T.bg3 : T.bg1,
         border        : `1px solid ${isSelected ? T.borderAccent : T.border}`,
         borderLeft    : `3px solid ${statusColor}`,
+        borderTop     : worstSeverity ? `2px solid ${sevColor}` : `2px solid transparent`,
         borderRadius  : 4,
         cursor        : "pointer",
-        padding       : "12px 14px",
+        padding       : "11px 13px",
         textAlign     : "left",
         width         : "100%",
         boxShadow     : isSelected ? T.shadowSm : "none",
@@ -142,13 +143,13 @@ export default DeviceCard;
 function MetricCell({ label, value, anomaly, T }) {
   return (
     <div style={{
-      background: T.bg1,
+      background: T.bg2,
       borderRadius: 3,
       padding: "5px 8px",
-      border: `1px solid ${anomaly ? T.fault : T.border}`,
+      border: `1px solid ${anomaly ? T.fault + "80" : T.border}`,
       transition: "border-color 0.2s",
     }}>
-      <div style={{ fontSize: 9, fontFamily: "IBM Plex Mono", color: T.text2, marginBottom: 2 }}>
+      <div style={{ fontSize: 8, fontFamily: "IBM Plex Mono", color: T.text2, marginBottom: 2, letterSpacing: "0.08em" }}>
         {label}
       </div>
       <div style={{
@@ -156,6 +157,7 @@ function MetricCell({ label, value, anomaly, T }) {
         fontWeight: 700,
         color: anomaly ? T.fault : T.text1,
         transition: "color 0.2s",
+        fontVariantNumeric: "tabular-nums",
       }}>
         {value}
       </div>
