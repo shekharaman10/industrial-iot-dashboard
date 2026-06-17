@@ -8,33 +8,23 @@ import { useSensorData } from "../hooks/useSensorData";
 import { fetchDevices }  from "../services/api";
 import { formatZScore } from "../utils/formatters";
 import { TEMP_WARNING_THRESHOLD, HISTORY_WINDOWS } from "../utils/constants";
-
-// ─── Design tokens ────────────────────────────────────────────────────────────
-const C = {
-  bg0   : "#060b12",
-  bg1   : "#0a1019",
-  bg2   : "#0f1923",
-  border: "#132030",
-  accent: "#f59e0b",
-  text0 : "#e2e8f0",
-  text1 : "#94a3b8",
-  text2 : "#475569",
-};
+import { useTheme } from "../context/ThemeContext";
 
 // ─── Error Boundary ───────────────────────────────────────────────────────────
 class ChartErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, T: props.T };
   }
   static getDerivedStateFromError() { return { hasError: true }; }
   componentDidCatch(err) { console.error("[ChartErrorBoundary]", err); }
   render() {
+    const T = this.props.T;
     if (this.state.hasError) {
       return (
         <div style={{
           height: 240, display: "flex", alignItems: "center", justifyContent: "center",
-          background: "#0f1923", borderRadius: 4, color: "#475569",
+          background: T.bg2, borderRadius: 4, color: T.text2,
           fontFamily: "IBM Plex Mono", fontSize: 12,
         }}>
           Chart failed to render. Check console for details.
@@ -47,8 +37,13 @@ class ChartErrorBoundary extends Component {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function ConnectionBadge({ status }) {
-  const color = { Connected: "#22c55e", Reconnecting: "#f59e0b", Disconnected: "#ef4444" }[status] ?? C.text2;
+function ConnectionBadge({ status, T }) {
+  const color = {
+    Connected    : T.online,
+    Reconnecting : T.stale,
+    Disconnected : T.fault,
+  }[status] ?? T.text2;
+
   return (
     <div
       role="status"
@@ -58,8 +53,9 @@ function ConnectionBadge({ status }) {
     >
       <span style={{
         display: "inline-block", width: 7, height: 7, borderRadius: "50%",
-        background: color, boxShadow: status === "Connected" ? `0 0 6px ${color}` : "none",
-        animation: status === "Connected" ? "pulse 2s infinite" : "none",
+        background: color,
+        boxShadow: status === "Connected" ? `0 0 6px ${color}` : "none",
+        animation: status === "Connected" ? "led-pulse 2s infinite" : "none",
       }} />
       <span style={{ fontFamily: "IBM Plex Mono", fontSize: 11, color, letterSpacing: "0.06em" }}>
         {status.toUpperCase()}
@@ -68,42 +64,47 @@ function ConnectionBadge({ status }) {
   );
 }
 
-function MetricCard({ label, value, unit, color = C.accent, sublabel, anomaly }) {
+function MetricCard({ label, value, unit, color, sublabel, anomaly, T }) {
+  const cardColor = color ?? T.accent;
   return (
     <div
       role={anomaly ? "alert" : "status"}
       aria-label={`${label}: ${value ?? "no data"}${unit ? " " + unit : ""}${anomaly ? ", anomaly detected" : ""}`}
       style={{
-        background: C.bg1,
-        border: `1px solid ${anomaly ? "#7f1d1d" : C.border}`,
-        borderTop: `2px solid ${anomaly ? "#ef4444" : color}`,
-        borderRadius: 6, padding: "14px 18px",
-        minWidth: 140, transition: "border-color 0.3s",
+        background: T.bg2,
+        border: `1px solid ${anomaly ? T.fault + "80" : T.border}`,
+        borderTop: `2px solid ${anomaly ? T.fault : cardColor}`,
+        borderRadius: 4, padding: "14px 18px",
+        minWidth: 148,
+        transition: "border-color 0.2s, background 0.2s",
       }}
     >
       {anomaly && (
         <div style={{
-          fontSize: 9, fontFamily: "IBM Plex Mono", color: "#ef4444",
+          fontSize: 9, fontFamily: "IBM Plex Mono", color: T.fault,
           letterSpacing: "0.08em", marginBottom: 4,
           animation: "blink 1s step-start infinite",
         }} aria-hidden="true">
-          ⚠ ANOMALY DETECTED
+          ⚠ ANOMALY
         </div>
       )}
-      <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: C.text2, letterSpacing: "0.1em", marginBottom: 6 }}>
-        {label.toUpperCase()}
+      <div style={{
+        fontSize: 9, fontFamily: "IBM Plex Mono", color: T.text2,
+        letterSpacing: "0.1em", marginBottom: 6, textTransform: "uppercase",
+      }}>
+        {label}
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
         <span style={{
           fontFamily: "IBM Plex Mono", fontWeight: 700, fontSize: 24,
-          color: anomaly ? "#ef4444" : color, transition: "color 0.3s",
+          color: anomaly ? T.fault : cardColor, transition: "color 0.2s",
         }}>
           {value ?? "—"}
         </span>
-        {unit && <span style={{ fontFamily: "IBM Plex Mono", fontSize: 11, color: C.text2 }}>{unit}</span>}
+        {unit && <span style={{ fontFamily: "IBM Plex Mono", fontSize: 11, color: T.text2 }}>{unit}</span>}
       </div>
       {sublabel && (
-        <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: C.text2, marginTop: 4 }}>
+        <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: T.text2, marginTop: 4 }}>
           {sublabel}
         </div>
       )}
@@ -111,33 +112,50 @@ function MetricCard({ label, value, unit, color = C.accent, sublabel, anomaly })
   );
 }
 
-function SectionHeader({ children }) {
+function SectionLabel({ icon, children, count, T }) {
   return (
     <div style={{
-      fontSize: 10, fontFamily: "IBM Plex Mono", fontWeight: 700,
-      color: C.text2, letterSpacing: "0.15em", textTransform: "uppercase",
-      marginBottom: 10, display: "flex", alignItems: "center", gap: 8,
+      display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
     }}>
-      <span style={{ flex: 1, height: 1, background: C.border }} />
-      {children}
-      <span style={{ flex: 1, height: 1, background: C.border }} />
+      {icon && (
+        <span style={{
+          fontFamily: "IBM Plex Mono", fontSize: 12, color: T.brand,
+        }}>{icon}</span>
+      )}
+      <span style={{
+        fontSize: 10, fontFamily: "IBM Plex Mono", fontWeight: 700,
+        color: T.text2, letterSpacing: "0.15em", textTransform: "uppercase",
+      }}>
+        {children}
+      </span>
+      {count != null && (
+        <span style={{
+          fontSize: 9, fontFamily: "IBM Plex Mono",
+          color: T.accent, border: `1px solid ${T.accent}40`,
+          borderRadius: 3, padding: "0 5px",
+        }}>
+          {count}
+        </span>
+      )}
+      <span style={{ flex: 1, height: 1, background: T.border }} />
     </div>
   );
 }
 
-function TabButton({ active, onClick, children, label }) {
+function TabButton({ active, onClick, children, label, T }) {
   return (
     <button
       onClick={onClick}
       aria-pressed={active}
       aria-label={label}
       style={{
-        background: active ? C.bg2 : "transparent",
-        border: `1px solid ${active ? C.accent : C.border}`,
-        borderRadius: 4, color: active ? C.accent : C.text2,
+        background: active ? T.bg3 : "transparent",
+        border: `1px solid ${active ? T.accent : T.border}`,
+        borderRadius: 3, color: active ? T.accent : T.text2,
         cursor: "pointer", fontFamily: "IBM Plex Mono",
         fontSize: 10, padding: "5px 14px",
         letterSpacing: "0.08em", textTransform: "uppercase",
+        transition: "all 0.2s",
       }}
     >
       {children}
@@ -145,14 +163,36 @@ function TabButton({ active, onClick, children, label }) {
   );
 }
 
+function Skeleton({ height, T }) {
+  return (
+    <div
+      role="progressbar"
+      aria-label="Loading chart data"
+      style={{
+        height, background: T.bg3, borderRadius: 4,
+        animation: "fade-in 1.5s ease-in-out infinite alternate",
+      }}
+    />
+  );
+}
+
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
+  const { T, isDark, toggleTheme } = useTheme();
+
   const [deviceList,   setDeviceList]   = useState([]);
   const [selectedId,   setSelectedId]   = useState(null);
   const [viewMode,     setViewMode]     = useState("live");   // "live" | "history"
   const [historyMins,  setHistoryMins]  = useState(60);
   const [showAnalysis, setShowAnalysis] = useState(true);
+  const [now,          setNow]          = useState(new Date());
+
+  // Clock tick
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const loadDevices = useCallback(() => {
     fetchDevices()
@@ -176,132 +216,258 @@ export default function Dashboard() {
   const tempAnalysis = latest?.analysis?.temperature;
   const unackedCount = alerts.filter((a) => !a.acknowledged).length;
 
+  // Status ribbon counts
+  const onlineCount  = deviceList.filter((d) => d.status === "Online").length;
+  const staleCount   = deviceList.filter((d) => d.isStale).length;
+  const offlineCount = deviceList.filter((d) => d.status === "Offline" || d.status === "Unknown").length;
+  const faultCount   = alerts.filter((a) => a.severity === "Fault"    && !a.acknowledged).length;
+  const critCount    = alerts.filter((a) => a.severity === "Critical"  && !a.acknowledged).length;
+  const warnCount    = alerts.filter((a) => a.severity === "Warning"   && !a.acknowledged).length;
+  const peakVib      = liveReadings.length > 0
+    ? Math.max(...liveReadings.map((r) => r.vibration ?? 0)).toFixed(4)
+    : "—";
+
   return (
-    <div
-      style={{ background: C.bg0, minHeight: "100vh", color: C.text0, fontFamily: "'IBM Plex Sans', sans-serif" }}
-    >
+    <div style={{
+      background: T.bg0, minHeight: "100vh", color: T.text0,
+      fontFamily: "'IBM Plex Sans', sans-serif",
+      transition: "background 0.2s, color 0.2s",
+    }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: #1e3a4a; border-radius: 2px; }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 2px; }
+        @keyframes led-pulse { 0%,100%{opacity:1} 50%{opacity:.7} }
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+        @keyframes fade-in { 0%{opacity:.4} 100%{opacity:.7} }
+        @keyframes card-in { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
       `}</style>
 
-      {/* ── Top Bar ───────────────────────────────────────────────────── */}
+      {/* ── HEADER ──────────────────────────────────────────────────────── */}
       <header
         role="banner"
-        aria-label="Industrial IoT Monitor"
+        aria-label="Emerson Ovation IoT Dashboard"
         style={{
-          background: C.bg1, borderBottom: `1px solid ${C.border}`,
-          padding: "12px 28px", display: "flex", alignItems: "center",
-          gap: 20, position: "sticky", top: 0, zIndex: 50,
+          background: T.bg1,
+          borderBottom: `1px solid ${T.border}`,
+          borderLeft: `4px solid ${T.brand}`,
+          padding: "0 28px",
+          height: 56,
+          display: "flex", alignItems: "center",
+          gap: 20, position: "sticky", top: 0, zIndex: 100,
+          boxShadow: T.shadowSm,
+          transition: "background 0.2s, border-color 0.2s",
         }}
       >
+        {/* Left: Logo + Title */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
           <div style={{
-            width: 28, height: 28, borderRadius: 6,
-            background: `linear-gradient(135deg, ${C.accent} 0%, #92400e 100%)`,
+            width: 30, height: 30, borderRadius: 4,
+            background: T.brand,
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 14, fontWeight: 700, color: "#000",
-          }} aria-hidden="true">⬡</div>
+            fontSize: 16, color: "#fff", fontWeight: 700, flexShrink: 0,
+          }} aria-hidden="true">◈</div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.02em" }}>
-              INDUSTRIAL IoT MONITOR
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+              <span style={{
+                fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600,
+                fontSize: 14, color: T.brand, letterSpacing: "0.08em",
+              }}>
+                EMERSON
+              </span>
+              <span style={{
+                fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600,
+                fontSize: 14, color: T.text0, letterSpacing: "0.04em",
+              }}>
+                OVATION™ IoT
+              </span>
             </div>
-            <div style={{ fontSize: 9, fontFamily: "IBM Plex Mono", color: C.text2, letterSpacing: "0.1em" }}>
-              PREDICTIVE MAINTENANCE SYSTEM v1.2.0
+            <div style={{
+              fontSize: 10, fontFamily: "IBM Plex Mono", color: T.text2,
+              letterSpacing: "0.08em",
+            }}>
+              Predictive Maintenance System v2.1.0
             </div>
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+        {/* Right: alerts + connection + time + theme toggle */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           {unackedCount > 0 && (
             <div
               role="alert"
               aria-live="assertive"
               style={{
-                background: "#1c0a0a", border: "1px solid #7f1d1d",
+                background: T.name === "dark" ? "#1c0a0a" : "#fde8e8",
+                border: `1px solid ${T.fault}60`,
                 borderRadius: 4, padding: "4px 10px",
-                fontSize: 11, fontFamily: "IBM Plex Mono", color: "#ef4444",
+                fontSize: 11, fontFamily: "IBM Plex Mono", color: T.fault,
                 animation: "blink 2s step-start infinite",
+                letterSpacing: "0.06em",
               }}
             >
               ⚠ {unackedCount} UNACKED ALERT{unackedCount > 1 ? "S" : ""}
             </div>
           )}
-          <ConnectionBadge status={connectionStatus} />
-          <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: C.text2 }} aria-hidden="true">
-            {new Date().toLocaleString()}
+
+          <ConnectionBadge status={connectionStatus} T={T} />
+
+          <div style={{
+            fontSize: 10, fontFamily: "IBM Plex Mono", color: T.text2,
+            letterSpacing: "0.04em",
+          }} aria-hidden="true">
+            {now.toLocaleString()}
           </div>
+
+          {/* Theme toggle */}
+          <button
+            onClick={toggleTheme}
+            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            style={{
+              width: 36, height: 36, borderRadius: "50%",
+              border: `1px solid ${T.border}`,
+              background: "transparent",
+              cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 16,
+              color: T.text1,
+              transition: "all 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = T.brand;
+              e.currentTarget.style.color = T.brand;
+              e.currentTarget.style.background = T.bg3;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = T.border;
+              e.currentTarget.style.color = T.text1;
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            {isDark ? "☀" : "☾"}
+          </button>
         </div>
       </header>
 
-      <main style={{ padding: "20px 28px", display: "grid", gap: 16 }}>
+      {/* ── STATUS RIBBON ────────────────────────────────────────────────── */}
+      <div style={{
+        background: T.bg1,
+        borderBottom: `1px solid ${T.border}`,
+        padding: "6px 28px",
+        display: "flex", alignItems: "center", gap: 16,
+        fontSize: 10, fontFamily: "IBM Plex Mono",
+        transition: "background 0.2s",
+      }}>
+        {/* Device counts */}
+        <span style={{ color: T.text2 }}>NODES:</span>
+        <RibbonDot color={T.online}  label={`${onlineCount} Online`}  T={T} />
+        <RibbonDot color={T.stale}   label={`${staleCount} Stale`}    T={T} />
+        <RibbonDot color={T.offline} label={`${offlineCount} Offline`} T={T} />
 
-        {/* ── Device Grid ──────────────────────────────────────────── */}
-        <section aria-label="Devices" style={{ background: C.bg1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "14px 18px" }}>
-          <SectionHeader>DEVICES ({deviceList.length})</SectionHeader>
-          {deviceList.length === 0
-            ? <div style={{ fontSize: 12, fontFamily: "IBM Plex Mono", color: C.text2 }}>
-                No devices registered. Start the simulator or connect ESP32.
-              </div>
-            : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
-                {deviceList.map((d) => (
+        <RibbonSep T={T} />
+
+        {/* Alert counts */}
+        <span style={{ color: T.text2 }}>ALERTS:</span>
+        {faultCount === 0 && critCount === 0 && warnCount === 0 ? (
+          <span style={{ color: T.online, fontWeight: 700 }}>All nominal</span>
+        ) : (
+          <>
+            {faultCount > 0 && <RibbonDot color={T.fault}    label={`${faultCount} Fault`}    T={T} />}
+            {critCount  > 0 && <RibbonDot color={T.critical} label={`${critCount} Critical`}  T={T} />}
+            {warnCount  > 0 && <RibbonDot color={T.warning}  label={`${warnCount} Warning`}   T={T} />}
+          </>
+        )}
+
+        <RibbonSep T={T} />
+
+        <span style={{ color: T.text2 }}>PEAK VIB:</span>
+        <span style={{ color: T.text1 }}>{peakVib} {peakVib !== "—" ? "m/s²" : ""}</span>
+      </div>
+
+      <main style={{ padding: "18px 28px", display: "grid", gap: 16 }}>
+
+        {/* ── EQUIPMENT NODES ──────────────────────────────────────────── */}
+        <section
+          aria-label="Equipment nodes"
+          style={{
+            background: T.bg1, border: `1px solid ${T.border}`,
+            borderRadius: 4, padding: "14px 18px",
+            transition: "background 0.2s, border-color 0.2s",
+          }}
+        >
+          <SectionLabel icon="⬡" count={deviceList.length} T={T}>
+            EQUIPMENT NODES
+          </SectionLabel>
+
+          {deviceList.length === 0 ? (
+            <div style={{ fontSize: 12, fontFamily: "IBM Plex Mono", color: T.text2, padding: "8px 0" }}>
+              No devices registered. Start the simulator or connect an ESP32.
+            </div>
+          ) : (
+            <div style={{
+              display: "flex", gap: 10, overflowX: "auto",
+              paddingBottom: 4,
+            }}>
+              {deviceList.map((d) => (
+                <div key={d.id} style={{ minWidth: 200, flexShrink: 0 }}>
                   <DeviceCard
-                    key={d.id}
                     device={d}
                     latestFrame={devices[d.id]}
                     isSelected={d.id === selectedId}
                     onSelect={() => setSelectedId(d.id)}
                   />
-                ))}
-              </div>
-            )
-          }
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
-        {/* ── Selected Device Detail ────────────────────────────────── */}
+        {/* ── SELECTED DEVICE DETAIL ───────────────────────────────────── */}
         {selectedId && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 16 }}>
 
             {/* LEFT COLUMN */}
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-              {/* Metric cards */}
+              {/* Metric cards row */}
               <section aria-label="Live metrics" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <MetricCard
-                  label="Vibration RMS"
+                  label="VIB RMS"
                   value={latest?.vibration?.toFixed(4) ?? "—"}
                   unit="m/s²"
-                  color={C.accent}
+                  color={T.vib}
                   anomaly={vibAnalysis?.isAnomaly}
                   sublabel={vibAnalysis
                     ? `Z=${formatZScore(vibAnalysis.zScore)}  avg=${vibAnalysis.movingAvg?.toFixed(3)}`
                     : "Awaiting data…"}
+                  T={T}
                 />
                 <MetricCard
-                  label="Temperature"
+                  label="TEMPERATURE"
                   value={latest?.temperature?.toFixed(1) ?? "—"}
                   unit="°C"
-                  color="#34d399"
+                  color={T.temp}
                   anomaly={tempAnalysis?.isAnomaly}
                   sublabel={`Humidity: ${latest?.humidity?.toFixed(1) ?? "—"} %`}
+                  T={T}
                 />
                 <MetricCard
-                  label="Sequence"
+                  label="SEQUENCE"
                   value={latest?.seq ?? "—"}
-                  color="#60a5fa"
+                  color={T.accent}
                   sublabel={latest?.location ?? "—"}
+                  T={T}
                 />
                 <MetricCard
-                  label="Buffer"
+                  label="BUFFER"
                   value={liveReadings.length}
                   unit="pts"
-                  color="#a78bfa"
+                  color={T.humid}
                   sublabel="live ring (120 max)"
+                  T={T}
                 />
               </section>
 
@@ -313,10 +479,15 @@ export default function Dashboard() {
                 />
               )}
 
-              {/* View controls */}
+              {/* Chart controls tab bar */}
               <div role="toolbar" aria-label="View controls" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                <TabButton active={viewMode === "live"} onClick={() => setViewMode("live")} label="Switch to live view">
-                  ● Live
+                <TabButton
+                  active={viewMode === "live"}
+                  onClick={() => setViewMode("live")}
+                  label="Switch to live view"
+                  T={T}
+                >
+                  ● LIVE
                 </TabButton>
                 {HISTORY_WINDOWS.map((w) => (
                   <TabButton
@@ -324,23 +495,25 @@ export default function Dashboard() {
                     active={viewMode === "history" && historyMins === w.minutes}
                     onClick={() => { setViewMode("history"); setHistoryMins(w.minutes); }}
                     label={`View ${w.label} history`}
+                    T={T}
                   >
-                    ⏱ {w.label}
+                    {w.label.toUpperCase()}
                   </TabButton>
                 ))}
-                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ marginLeft: "auto" }}>
                   <button
                     onClick={() => setShowAnalysis((v) => !v)}
                     aria-pressed={showAnalysis}
                     aria-label={showAnalysis ? "Hide analysis overlay" : "Show analysis overlay"}
                     style={{
-                      background: showAnalysis ? C.bg2 : "transparent",
-                      border: `1px solid ${C.border}`, borderRadius: 4,
-                      color: C.text2, cursor: "pointer",
+                      background: showAnalysis ? T.bg3 : "transparent",
+                      border: `1px solid ${T.border}`, borderRadius: 3,
+                      color: T.text2, cursor: "pointer",
                       fontFamily: "IBM Plex Mono", fontSize: 10, padding: "5px 10px",
+                      letterSpacing: "0.06em", transition: "all 0.2s",
                     }}
                   >
-                    {showAnalysis ? "Hide" : "Show"} Analysis
+                    {showAnalysis ? "HIDE ANALYSIS" : "SHOW ANALYSIS"}
                   </button>
                 </div>
               </div>
@@ -349,17 +522,17 @@ export default function Dashboard() {
               <section
                 aria-label="Vibration RMS chart"
                 style={{
-                  background: C.bg1,
-                  border: `1px solid ${vibAnalysis?.isAnomaly ? "#7f1d1d" : C.border}`,
-                  borderRadius: 6, padding: "16px 18px",
-                  transition: "border-color 0.4s",
+                  background: T.bg1,
+                  border: `1px solid ${vibAnalysis?.isAnomaly ? T.fault + "80" : T.border}`,
+                  borderRadius: 4, padding: "16px 18px",
+                  transition: "border-color 0.4s, background 0.2s",
                 }}
               >
-                <SectionHeader>VIBRATION RMS (m/s²)</SectionHeader>
+                <SectionLabel icon="◈" T={T}>VIBRATION RMS (m/s²)</SectionLabel>
                 {loading
-                  ? <Skeleton height={240} />
+                  ? <Skeleton height={240} T={T} />
                   : (
-                    <ChartErrorBoundary>
+                    <ChartErrorBoundary T={T}>
                       <VibrationChart
                         data={chartData}
                         showAvg
@@ -374,17 +547,17 @@ export default function Dashboard() {
               <section
                 aria-label="Temperature and humidity chart"
                 style={{
-                  background: C.bg1,
-                  border: `1px solid ${tempAnalysis?.isAnomaly ? "#7f1d1d" : C.border}`,
-                  borderRadius: 6, padding: "16px 18px",
-                  transition: "border-color 0.4s",
+                  background: T.bg1,
+                  border: `1px solid ${tempAnalysis?.isAnomaly ? T.fault + "80" : T.border}`,
+                  borderRadius: 4, padding: "16px 18px",
+                  transition: "border-color 0.4s, background 0.2s",
                 }}
               >
-                <SectionHeader>TEMPERATURE (°C) + HUMIDITY (%)</SectionHeader>
+                <SectionLabel icon="◈" T={T}>TEMPERATURE (°C) + HUMIDITY (%)</SectionLabel>
                 {loading
-                  ? <Skeleton height={240} />
+                  ? <Skeleton height={240} T={T} />
                   : (
-                    <ChartErrorBoundary>
+                    <ChartErrorBoundary T={T}>
                       <TemperatureChart
                         data={chartData}
                         tempWarningThreshold={TEMP_WARNING_THRESHOLD}
@@ -400,13 +573,14 @@ export default function Dashboard() {
               aria-label="Alerts panel"
               aria-live="polite"
               style={{
-                background: C.bg1, border: `1px solid ${C.border}`,
-                borderRadius: 6, padding: "16px 18px",
+                background: T.bg1, border: `1px solid ${T.border}`,
+                borderRadius: 4, padding: "16px 18px",
                 display: "flex", flexDirection: "column",
                 maxHeight: "calc(100vh - 160px)", overflow: "hidden",
+                transition: "background 0.2s, border-color 0.2s",
               }}
             >
-              <SectionHeader>ALERTS</SectionHeader>
+              <SectionLabel icon="▲" T={T}>ALERTS</SectionLabel>
               <AlertsPanel alerts={alerts} onAcknowledge={ackAlert} />
             </section>
           </div>
@@ -416,15 +590,25 @@ export default function Dashboard() {
   );
 }
 
-function Skeleton({ height }) {
+// ─── Ribbon helpers ───────────────────────────────────────────────────────────
+
+function RibbonDot({ color, label, T }) {
   return (
-    <div
-      role="progressbar"
-      aria-label="Loading chart data"
-      style={{
-        height, background: "#0f1923", borderRadius: 4,
-        animation: "pulse 1.5s ease-in-out infinite",
-      }}
-    />
+    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <span style={{
+        width: 6, height: 6, borderRadius: "50%",
+        background: color, flexShrink: 0,
+      }} />
+      <span style={{ color: T.text1 }}>{label}</span>
+    </span>
+  );
+}
+
+function RibbonSep({ T }) {
+  return (
+    <span style={{
+      width: 1, height: 12, background: T.border,
+      display: "inline-block", flexShrink: 0,
+    }} />
   );
 }

@@ -1,6 +1,5 @@
 import { formatZScore } from "../utils/formatters.js";
-
-const SEVERITY_BAR = { Warning: "#f59e0b", Critical: "#f97316", Fault: "#ef4444" };
+import { useTheme } from "../context/ThemeContext";
 
 /**
  * AnalysisOverlay
@@ -14,7 +13,11 @@ const SEVERITY_BAR = { Warning: "#f59e0b", Critical: "#f97316", Fault: "#ef4444"
  *   tempAnalysis : analysis object from latest TelemetryReceived frame
  */
 export default function AnalysisOverlay({ vibAnalysis, tempAnalysis }) {
+  const { T } = useTheme();
+
   if (!vibAnalysis && !tempAnalysis) return null;
+
+  const SEVERITY_BAR = { Warning: T.warning, Critical: T.critical, Fault: T.fault };
 
   return (
     <div style={{
@@ -22,13 +25,29 @@ export default function AnalysisOverlay({ vibAnalysis, tempAnalysis }) {
       gridTemplateColumns: vibAnalysis && tempAnalysis ? "1fr 1fr" : "1fr",
       gap: 10,
     }}>
-      {vibAnalysis  && <AnalysisCard label="Vibration"   analysis={vibAnalysis}  color="#f59e0b" />}
-      {tempAnalysis && <AnalysisCard label="Temperature" analysis={tempAnalysis} color="#34d399" />}
+      {vibAnalysis  && (
+        <AnalysisCard
+          label="Vibration"
+          analysis={vibAnalysis}
+          color={T.vib}
+          T={T}
+          SEVERITY_BAR={SEVERITY_BAR}
+        />
+      )}
+      {tempAnalysis && (
+        <AnalysisCard
+          label="Temperature"
+          analysis={tempAnalysis}
+          color={T.temp}
+          T={T}
+          SEVERITY_BAR={SEVERITY_BAR}
+        />
+      )}
     </div>
   );
 }
 
-function AnalysisCard({ label, analysis, color }) {
+function AnalysisCard({ label, analysis, color, T, SEVERITY_BAR }) {
   const z      = analysis.zScore     ?? 0;
   const avg    = analysis.movingAvg  ?? 0;
   const base   = analysis.baseline   ?? 0;
@@ -42,16 +61,17 @@ function AnalysisCard({ label, analysis, color }) {
 
   return (
     <div style={{
-      background: "#0a1019",
-      border: `1px solid ${sev ? SEVERITY_BAR[sev] + "40" : "#132030"}`,
+      background: T.bg1,
+      border: `1px solid ${sev ? SEVERITY_BAR[sev] + "40" : T.border}`,
       borderRadius: 6,
       padding: "10px 12px",
+      transition: "border-color 0.2s",
     }}>
       {/* Label + anomaly badge */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
         <span style={{
           fontSize: 10, fontFamily: "IBM Plex Mono", fontWeight: 700,
-          color: "#475569", letterSpacing: "0.1em",
+          color: T.text2, letterSpacing: "0.1em",
         }}>
           {label.toUpperCase()}
         </span>
@@ -71,14 +91,14 @@ function AnalysisCard({ label, analysis, color }) {
       {/* Z-score gauge */}
       <div style={{ marginBottom: 8 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-          <span style={{ fontSize: 9, fontFamily: "IBM Plex Mono", color: "#334155" }}>
+          <span style={{ fontSize: 9, fontFamily: "IBM Plex Mono", color: T.text2 }}>
             Z-SCORE
           </span>
           <span style={{ fontSize: 11, fontFamily: "IBM Plex Mono", fontWeight: 700, color: barColor }}>
             {formatZScore(z)}
           </span>
         </div>
-        <div style={{ height: 4, background: "#060b12", borderRadius: 2 }}>
+        <div style={{ height: 4, background: T.bg0, borderRadius: 2 }}>
           <div style={{
             height: "100%", width: `${zPct}%`,
             background: barColor,
@@ -93,7 +113,7 @@ function AnalysisCard({ label, analysis, color }) {
               position: "absolute",
               left: `${Math.min((threshold / 4) * 100, 100)}%`,
               top: 0, width: 1, height: 8,
-              background: "#1e3a4a",
+              background: T.border,
             }} />
           ))}
         </div>
@@ -101,22 +121,22 @@ function AnalysisCard({ label, analysis, color }) {
 
       {/* Stats table */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 10px" }}>
-        <Stat label="Avg"     value={avg.toFixed(3)}    />
-        <Stat label="Baseline"value={base.toFixed(3)}   />
-        <Stat label="Std Dev" value={stddev.toFixed(3)} />
-        <Stat label="Samples" value={n >= 300 ? `${n} ✓` : `${n}/300`} />
+        <Stat label="Avg"      value={avg.toFixed(3)}    T={T} />
+        <Stat label="Baseline" value={base.toFixed(3)}   T={T} />
+        <Stat label="Std Dev"  value={stddev.toFixed(3)} T={T} />
+        <Stat label="Samples"  value={n >= 300 ? `${n} ✓` : `${n}/300`} T={T} />
       </div>
     </div>
   );
 }
 
-function Stat({ label, value }) {
+function Stat({ label, value, T }) {
   return (
     <>
-      <span style={{ fontSize: 9, fontFamily: "IBM Plex Mono", color: "#334155" }}>
+      <span style={{ fontSize: 9, fontFamily: "IBM Plex Mono", color: T.text2 }}>
         {label}
       </span>
-      <span style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: "#64748b", textAlign: "right" }}>
+      <span style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: T.text1, textAlign: "right" }}>
         {value}
       </span>
     </>

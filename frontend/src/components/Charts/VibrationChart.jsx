@@ -3,10 +3,7 @@ import {
   Tooltip, ReferenceLine, ResponsiveContainer, Legend
 } from "recharts";
 import { useMemo } from "react";
-
-const ANOMALY_COLOR = "#ef4444";
-const NORMAL_COLOR  = "#f59e0b";
-const AVG_COLOR     = "#60a5fa";
+import { useTheme } from "../../context/ThemeContext";
 
 /**
  * VibrationChart
@@ -22,6 +19,12 @@ const AVG_COLOR     = "#60a5fa";
  *   baselineRef : number | null — draw a horizontal reference line
  */
 export default function VibrationChart({ data = [], showAvg = true, baselineRef = null }) {
+  const { T } = useTheme();
+
+  const NORMAL_COLOR  = T.vib;
+  const AVG_COLOR     = T.avg;
+  const ANOMALY_COLOR = T.anomaly;
+
   const chartData = useMemo(() =>
     data.map((r) => ({
       time    : new Date(r.timestamp || r.ts).toLocaleTimeString(),
@@ -33,7 +36,7 @@ export default function VibrationChart({ data = [], showAvg = true, baselineRef 
     }))
   , [data]);
 
-  // Custom dot: red on anomaly, transparent otherwise
+  // Custom dot: anomaly color on anomaly, transparent otherwise
   const CustomDot = ({ cx, cy, payload }) => {
     if (!payload.anomaly) return null;
     return (
@@ -42,7 +45,7 @@ export default function VibrationChart({ data = [], showAvg = true, baselineRef 
         fill={ANOMALY_COLOR}
         stroke="#fff"
         strokeWidth={1.5}
-        style={{ filter: "drop-shadow(0 0 4px #ef4444)" }}
+        style={{ filter: `drop-shadow(0 0 4px ${ANOMALY_COLOR})` }}
       />
     );
   };
@@ -52,15 +55,15 @@ export default function VibrationChart({ data = [], showAvg = true, baselineRef 
     const frame = payload[0]?.payload;
     return (
       <div style={{
-        background: "#0f1923",
-        border: "1px solid #1e3a4a",
+        background: T.bg3,
+        border: `1px solid ${T.border}`,
         borderRadius: 4,
         padding: "8px 12px",
         fontFamily: "'IBM Plex Mono', monospace",
         fontSize: 12,
-        color: "#cbd5e1",
+        color: T.text1,
       }}>
-        <p style={{ color: "#64748b", marginBottom: 4 }}>{label}</p>
+        <p style={{ color: T.text2, marginBottom: 4 }}>{label}</p>
         {frame.rms      != null && <p style={{ color: NORMAL_COLOR }}>RMS: {frame.rms} m/s²</p>}
         {frame.movingAvg!= null && <p style={{ color: AVG_COLOR   }}>Avg: {frame.movingAvg} m/s²</p>}
         {frame.anomaly  != null && <p style={{ color: ANOMALY_COLOR, fontWeight: 700 }}>⚠ ANOMALY</p>}
@@ -78,16 +81,16 @@ export default function VibrationChart({ data = [], showAvg = true, baselineRef 
           </linearGradient>
         </defs>
 
-        <CartesianGrid strokeDasharray="3 3" stroke="#1e3a4a" />
+        <CartesianGrid strokeDasharray="3 3" stroke={T.chartGrid} />
 
         <XAxis
           dataKey="time"
-          tick={{ fill: "#475569", fontSize: 10, fontFamily: "IBM Plex Mono" }}
+          tick={{ fill: T.chartTick, fontSize: 10, fontFamily: "IBM Plex Mono" }}
           tickLine={false}
           interval="preserveStartEnd"
         />
         <YAxis
-          tick={{ fill: "#475569", fontSize: 10, fontFamily: "IBM Plex Mono" }}
+          tick={{ fill: T.chartTick, fontSize: 10, fontFamily: "IBM Plex Mono" }}
           tickLine={false}
           axisLine={false}
           domain={["auto", "auto"]}
@@ -97,15 +100,15 @@ export default function VibrationChart({ data = [], showAvg = true, baselineRef 
         {baselineRef && (
           <ReferenceLine
             y={baselineRef}
-            stroke="#334155"
+            stroke={T.text2}
             strokeDasharray="6 3"
-            label={{ value: "baseline", fill: "#475569", fontSize: 10 }}
+            label={{ value: "baseline", fill: T.chartTick, fontSize: 10 }}
           />
         )}
 
         <Tooltip content={<CustomTooltip />} />
         <Legend
-          wrapperStyle={{ fontSize: 11, fontFamily: "IBM Plex Mono", color: "#64748b" }}
+          wrapperStyle={{ fontSize: 11, fontFamily: "IBM Plex Mono", color: T.text2 }}
         />
 
         <Area
