@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace IotDashboard.Api.Hubs;
@@ -19,9 +20,11 @@ namespace IotDashboard.Api.Hubs;
 ///   "device:{id}"      — clients subscribed to a specific device
 ///
 /// Authentication:
-///   Not wired here for brevity. Add [Authorize] attribute + JWT bearer
-///   scheme when deploying to production.
+///   JWT bearer token required. The frontend passes it as ?access_token= in the
+///   hub URL (standard SignalR pattern — see JwtBearerEvents in Program.cs).
+///   Obtain a token from POST /api/auth/token with the configured API key.
 /// </summary>
+[Authorize]
 public sealed class SensorHub : Hub
 {
     private readonly ILogger<SensorHub> _logger;

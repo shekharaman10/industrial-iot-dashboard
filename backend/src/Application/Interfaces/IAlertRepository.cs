@@ -22,18 +22,23 @@ public interface IAlertRepository
 
     /// <summary>
     /// Most recent N alerts across all devices, newest first.
-    /// Default limit 50 matches the dashboard's initial load.
+    /// Pass <paramref name="before"/> as a cursor for stable keyset pagination
+    /// (avoids OFFSET drift when new alerts arrive between pages).
     /// </summary>
-    Task<IReadOnlyList<Alert>> GetRecentAsync(int limit = 50, CancellationToken ct = default);
+    Task<IReadOnlyList<Alert>> GetRecentAsync(
+        int              limit  = 50,
+        DateTimeOffset?  before = null,
+        CancellationToken ct    = default);
 
     /// <summary>
     /// Alerts for a specific device, newest first.
-    /// Used by the device-detail panel in the dashboard.
+    /// Pass <paramref name="before"/> as a cursor for keyset pagination.
     /// </summary>
     Task<IReadOnlyList<Alert>> GetByDeviceAsync(
-        string deviceId,
-        int    limit = 50,
-        CancellationToken ct = default);
+        string           deviceId,
+        int              limit  = 50,
+        DateTimeOffset?  before = null,
+        CancellationToken ct    = default);
 
     /// <summary>
     /// Mark an alert acknowledged. Sets acknowledged=true,

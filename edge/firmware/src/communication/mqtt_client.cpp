@@ -88,7 +88,16 @@ void MqttClient::_connect() {
     Serial.printf("[MQTT] Connected to %s:%u as %s\n",
                   _cfg.host, _cfg.port, _cfg.clientId);
 
-    _client.subscribe(_cfg.commandTopic, 1);
+    // Check subscription was accepted by the broker.
+    // subscribe() returns false if the SUBSCRIBE packet could not be sent
+    // (e.g. broker quota exceeded or buffer full). Without this check the
+    // device silently stops receiving commands.
+    if (!_client.subscribe(_cfg.commandTopic, 1)) {
+        Serial.printf("[MQTT] WARNING: subscription to %s FAILED — "
+                      "no commands will be received\n", _cfg.commandTopic);
+    } else {
+        Serial.printf("[MQTT] Subscribed to command topic: %s\n", _cfg.commandTopic);
+    }
 
     char online[128];
     snprintf(online, sizeof(online),

@@ -31,6 +31,12 @@
     <PackageReference Include="Serilog.Formatting.Compact" Version="2.0.0" />
     <PackageReference Include="Serilog.Enrichers.Environment" Version="2.3.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
+    <!-- Pin transitive Microsoft.IdentityModel packages to patched versions (CVE-2024-21319) -->
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="7.3.1" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.3.1" />
+    <!-- Pin RestSharp to fix GHSA-4rr6-2v9v-wcpc (transitive via InfluxDB.Client) -->
+    <PackageReference Include="RestSharp" Version="114.0.0" />
   </ItemGroup>
 
 </Project>

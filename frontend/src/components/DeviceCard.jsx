@@ -1,9 +1,12 @@
+import { memo, useMemo } from "react";
 import { formatVib, formatTemp, formatRelativeTime, STATUS_COLORS, SEVERITY_COLORS } from "../utils/formatters.js";
+
+const SEVERITY_ORDER = { Fault: 4, Critical: 3, Warning: 2, Info: 1 };
 
 /**
  * DeviceCard
  * Compact card showing one device's latest status.
- * Used in a grid layout on the dashboard for multi-device overview.
+ * Wrapped in React.memo — only re-renders when its specific device's frame changes.
  *
  * Props:
  *   device      : { id, location, status, firmware, lastSeen, isStale }
@@ -11,23 +14,24 @@ import { formatVib, formatTemp, formatRelativeTime, STATUS_COLORS, SEVERITY_COLO
  *   isSelected  : bool — highlight as active
  *   onSelect    : () => void
  */
-export default function DeviceCard({ device, latestFrame, isSelected, onSelect }) {
+const DeviceCard = memo(function DeviceCard({ device, latestFrame, isSelected, onSelect }) {
   const statusColor = STATUS_COLORS[device.status] ?? STATUS_COLORS.Unknown;
   const vibAnomaly  = latestFrame?.analysis?.vibration?.isAnomaly;
   const tempAnomaly = latestFrame?.analysis?.temperature?.isAnomaly;
 
-  const worstSeverity = (() => {
+  const worstSeverity = useMemo(() => {
     const sev = [
       latestFrame?.analysis?.vibration?.severity,
       latestFrame?.analysis?.temperature?.severity,
     ].filter(Boolean);
-    const order = { Fault: 4, Critical: 3, Warning: 2, Info: 1 };
-    return sev.sort((a, b) => (order[b] ?? 0) - (order[a] ?? 0))[0] ?? null;
-  })();
+    return sev.sort((a, b) => (SEVERITY_ORDER[b] ?? 0) - (SEVERITY_ORDER[a] ?? 0))[0] ?? null;
+  }, [latestFrame?.analysis?.vibration?.severity, latestFrame?.analysis?.temperature?.severity]);
 
   return (
     <button
       onClick={onSelect}
+      aria-pressed={isSelected}
+      aria-label={`Device ${device.id} — ${device.status}${worstSeverity ? `, ${worstSeverity} alert` : ""}`}
       style={{
         background    : isSelected ? "#0f1923" : "#0a1019",
         border        : `1px solid ${isSelected ? "#f59e0b" : worstSeverity ? SEVERITY_COLORS[worstSeverity] : "#132030"}`,
@@ -106,7 +110,9 @@ export default function DeviceCard({ device, latestFrame, isSelected, onSelect }
       </div>
     </button>
   );
-}
+});
+
+export default DeviceCard;
 
 function Metric({ label, value, anomaly }) {
   return (

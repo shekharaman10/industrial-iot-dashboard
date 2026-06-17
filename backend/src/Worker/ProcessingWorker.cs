@@ -32,6 +32,11 @@ public sealed class ProcessingWorker : BackgroundService
     private readonly AlertService                _alertSvc;
     private readonly IHubContext<SensorHub>      _hub;
 
+    // Track consecutive InfluxDB write failures so the health check can detect
+    // sustained persistence outages rather than silently dropping data.
+    private int _consecutiveInfluxFailures = 0;
+    private const int InfluxFailureAlertThreshold = 10;
+
     public ProcessingWorker(
         ILogger<ProcessingWorker> logger,
         ChannelReader<SensorReading> channel,
@@ -80,11 +85,26 @@ public sealed class ProcessingWorker : BackgroundService
         if (reading.HasTemperature)
             tempAnalysis = _engine.Evaluate(reading.DeviceId, reading.TemperatureC!.Value, SensorType.TemperatureCelsius);
 
-        // ── 2. Persist (fire and log error — do not block broadcast) ────────
-        _ = _sensorRepo.WriteAsync(reading, ct)
-            .ContinueWith(t => _logger.LogError(t.Exception,
-                "[ProcessingWorker] InfluxDB write failed for {Device}", reading.DeviceId),
-                TaskContinuationOptions.OnlyOnFaulted);
+        // ── 2. Persist (non-blocking — do not hold up SignalR broadcast) ────
+        // Track consecutive failures so health checks can surface a DB outage.
+        _ = _sensorRepo.WriteAsync(reading, ct).ContinueWith(t =>
+        {
+            if (t.IsFaulted)
+            {
+                int failures = Interlocked.Increment(ref _consecutiveInfluxFailures);
+                _logger.LogError(t.Exception,
+                    "[ProcessingWorker] InfluxDB write failed for {Device} (consecutive failures: {Count})",
+                    reading.DeviceId, failures);
+                if (failures == InfluxFailureAlertThreshold)
+                    _logger.LogCritical(
+                        "[ProcessingWorker] InfluxDB has failed {Count} consecutive times — check /health/ready",
+                        failures);
+            }
+            else
+            {
+                Interlocked.Exchange(ref _consecutiveInfluxFailures, 0);
+            }
+        }, TaskScheduler.Default);
 
         // ── 3. Alert evaluation ──────────────────────────────────────────────
         Alert? vibAlert  = null;

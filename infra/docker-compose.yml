@@ -11,6 +11,8 @@ version: "3.9"
 #
 # Startup order enforced via depends_on + healthchecks.
 # Backend won't start until both DBs pass health checks.
+#
+# Credentials are read from ../.env — copy .env.example to .env first.
 
 networks:
   iot_net:
@@ -35,6 +37,11 @@ services:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - mosquitto_data:/mosquitto/data
     networks: [iot_net]
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+          cpus: "0.25"
     healthcheck:
       test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "healthcheck", "-m", "ping", "-q", "0"]
       interval: 15s
@@ -48,16 +55,22 @@ services:
     restart: unless-stopped
     ports:
       - "8086:8086"
+    env_file: ../.env
     environment:
       DOCKER_INFLUXDB_INIT_MODE:        setup
-      DOCKER_INFLUXDB_INIT_USERNAME:    admin
-      DOCKER_INFLUXDB_INIT_PASSWORD:    adminpassword
-      DOCKER_INFLUXDB_INIT_ORG:         iot-org
-      DOCKER_INFLUXDB_INIT_BUCKET:      sensor-readings
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: dev-token-change-in-production
+      DOCKER_INFLUXDB_INIT_USERNAME:    ${INFLUXDB_USERNAME}
+      DOCKER_INFLUXDB_INIT_PASSWORD:    ${INFLUXDB_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG:         ${INFLUXDB_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET:      ${INFLUXDB_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_ADMIN_TOKEN}
     volumes:
       - influxdb_data:/var/lib/influxdb2
     networks: [iot_net]
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.50"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
       interval: 15s
@@ -72,16 +85,22 @@ services:
     restart: unless-stopped
     ports:
       - "5432:5432"
+    env_file: ../.env
     environment:
-      POSTGRES_DB:       iotdb
-      POSTGRES_USER:     iot
-      POSTGRES_PASSWORD: iot_secret
+      POSTGRES_DB:       ${POSTGRES_DB}
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks: [iot_net]
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.50"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U iot -d iotdb"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -95,21 +114,31 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    env_file: ../.env
     environment:
       ASPNETCORE_ENVIRONMENT:          Development
       Mqtt__Host:                      mosquitto
       Mqtt__Port:                      1883
       InfluxDb__Url:                   http://influxdb:8086
-      InfluxDb__Token:                 dev-token-change-in-production
-      InfluxDb__Org:                   iot-org
-      InfluxDb__Bucket:                sensor-readings
-      Postgres__ConnectionString:      "Host=postgres;Port=5432;Database=iotdb;Username=iot;Password=iot_secret"
+      InfluxDb__Token:                 ${INFLUXDB_ADMIN_TOKEN}
+      InfluxDb__Org:                   ${INFLUXDB_ORG}
+      InfluxDb__Bucket:                ${INFLUXDB_BUCKET}
+      Postgres__ConnectionString:      "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
       AllowedOrigins__0:               http://localhost:3000
+      Jwt__Secret:                     ${JWT_SECRET}
+      Jwt__Issuer:                     ${JWT_ISSUER}
+      Jwt__Audience:                   ${JWT_AUDIENCE}
+      Jwt__ApiKey:                     ${JWT_API_KEY}
     depends_on:
       mosquitto: { condition: service_healthy }
       influxdb:  { condition: service_healthy }
       postgres:  { condition: service_healthy }
     networks: [iot_net]
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.00"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
       interval: 15s
@@ -132,6 +161,11 @@ services:
     depends_on:
       backend: { condition: service_healthy }
     networks: [iot_net]
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+          cpus: "0.25"
 
   # ── Grafana (optional — pre-wired to InfluxDB) ───────────────────────────────
   grafana:
@@ -140,13 +174,19 @@ services:
     restart: unless-stopped
     ports:
       - "3001:3000"
+    env_file: ../.env
     environment:
-      GF_SECURITY_ADMIN_USER:     admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER:     ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP:     "false"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       influxdb: { condition: service_healthy }
     networks: [iot_net]
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.50"
     profiles: ["monitoring"]   # opt-in: `docker compose --profile monitoring up`

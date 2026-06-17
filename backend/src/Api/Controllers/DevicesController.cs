@@ -77,7 +77,7 @@ public sealed class DevicesController : ControllerBase
         if (limit is < 1 or > 500)
             return BadRequest(new { error = "limit must be between 1 and 500." });
 
-        var alerts = await _alertRepo.GetByDeviceAsync(deviceId, limit, ct);
+        var alerts = await _alertRepo.GetByDeviceAsync(deviceId, limit, null, ct);
         return Ok(alerts);
     }
 

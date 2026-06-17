@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, Component } from "react";
 import VibrationChart    from "./Charts/VibrationChart";
 import TemperatureChart  from "./Charts/TemperatureChart";
 import AlertsPanel       from "./AlertsPanel";
@@ -6,7 +6,7 @@ import DeviceCard        from "./DeviceCard";
 import AnalysisOverlay   from "./AnalysisOverlay";
 import { useSensorData } from "../hooks/useSensorData";
 import { fetchDevices }  from "../services/api";
-import { formatVib, formatTemp, formatZScore, STATUS_COLORS, SEVERITY_COLORS } from "../utils/formatters";
+import { formatZScore } from "../utils/formatters";
 import { TEMP_WARNING_THRESHOLD, HISTORY_WINDOWS } from "../utils/constants";
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -21,12 +21,41 @@ const C = {
   text2 : "#475569",
 };
 
+// ─── Error Boundary ───────────────────────────────────────────────────────────
+class ChartErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(err) { console.error("[ChartErrorBoundary]", err); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          height: 240, display: "flex", alignItems: "center", justifyContent: "center",
+          background: "#0f1923", borderRadius: 4, color: "#475569",
+          fontFamily: "IBM Plex Mono", fontSize: 12,
+        }}>
+          Chart failed to render. Check console for details.
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function ConnectionBadge({ status }) {
   const color = { Connected: "#22c55e", Reconnecting: "#f59e0b", Disconnected: "#ef4444" }[status] ?? C.text2;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+    <div
+      role="status"
+      aria-label={`Connection status: ${status}`}
+      aria-live="polite"
+      style={{ display: "flex", alignItems: "center", gap: 6 }}
+    >
       <span style={{
         display: "inline-block", width: 7, height: 7, borderRadius: "50%",
         background: color, boxShadow: status === "Connected" ? `0 0 6px ${color}` : "none",
@@ -41,19 +70,23 @@ function ConnectionBadge({ status }) {
 
 function MetricCard({ label, value, unit, color = C.accent, sublabel, anomaly }) {
   return (
-    <div style={{
-      background: C.bg1,
-      border: `1px solid ${anomaly ? "#7f1d1d" : C.border}`,
-      borderTop: `2px solid ${anomaly ? "#ef4444" : color}`,
-      borderRadius: 6, padding: "14px 18px",
-      minWidth: 140, transition: "border-color 0.3s",
-    }}>
+    <div
+      role={anomaly ? "alert" : "status"}
+      aria-label={`${label}: ${value ?? "no data"}${unit ? " " + unit : ""}${anomaly ? ", anomaly detected" : ""}`}
+      style={{
+        background: C.bg1,
+        border: `1px solid ${anomaly ? "#7f1d1d" : C.border}`,
+        borderTop: `2px solid ${anomaly ? "#ef4444" : color}`,
+        borderRadius: 6, padding: "14px 18px",
+        minWidth: 140, transition: "border-color 0.3s",
+      }}
+    >
       {anomaly && (
         <div style={{
           fontSize: 9, fontFamily: "IBM Plex Mono", color: "#ef4444",
           letterSpacing: "0.08em", marginBottom: 4,
           animation: "blink 1s step-start infinite",
-        }}>
+        }} aria-hidden="true">
           ⚠ ANOMALY DETECTED
         </div>
       )}
@@ -92,10 +125,12 @@ function SectionHeader({ children }) {
   );
 }
 
-function TabButton({ active, onClick, children }) {
+function TabButton({ active, onClick, children, label }) {
   return (
     <button
       onClick={onClick}
+      aria-pressed={active}
+      aria-label={label}
       style={{
         background: active ? C.bg2 : "transparent",
         border: `1px solid ${active ? C.accent : C.border}`,
@@ -119,14 +154,16 @@ export default function Dashboard() {
   const [historyMins,  setHistoryMins]  = useState(60);
   const [showAnalysis, setShowAnalysis] = useState(true);
 
-  useEffect(() => {
+  const loadDevices = useCallback(() => {
     fetchDevices()
       .then((devs) => {
         setDeviceList(devs);
         if (devs.length > 0 && !selectedId) setSelectedId(devs[0].id);
       })
       .catch(console.error);
-  }, []);
+  }, [selectedId]);
+
+  useEffect(() => { loadDevices(); }, [loadDevices]);
 
   const {
     connectionStatus, liveReadings, history,
@@ -140,7 +177,9 @@ export default function Dashboard() {
   const unackedCount = alerts.filter((a) => !a.acknowledged).length;
 
   return (
-    <div style={{ background: C.bg0, minHeight: "100vh", color: C.text0, fontFamily: "'IBM Plex Sans', sans-serif" }}>
+    <div
+      style={{ background: C.bg0, minHeight: "100vh", color: C.text0, fontFamily: "'IBM Plex Sans', sans-serif" }}
+    >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -151,18 +190,22 @@ export default function Dashboard() {
       `}</style>
 
       {/* ── Top Bar ───────────────────────────────────────────────────── */}
-      <header style={{
-        background: C.bg1, borderBottom: `1px solid ${C.border}`,
-        padding: "12px 28px", display: "flex", alignItems: "center",
-        gap: 20, position: "sticky", top: 0, zIndex: 50,
-      }}>
+      <header
+        role="banner"
+        aria-label="Industrial IoT Monitor"
+        style={{
+          background: C.bg1, borderBottom: `1px solid ${C.border}`,
+          padding: "12px 28px", display: "flex", alignItems: "center",
+          gap: 20, position: "sticky", top: 0, zIndex: 50,
+        }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
           <div style={{
             width: 28, height: 28, borderRadius: 6,
             background: `linear-gradient(135deg, ${C.accent} 0%, #92400e 100%)`,
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 14, fontWeight: 700, color: "#000",
-          }}>⬡</div>
+          }} aria-hidden="true">⬡</div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.02em" }}>
               INDUSTRIAL IoT MONITOR
@@ -175,26 +218,30 @@ export default function Dashboard() {
 
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
           {unackedCount > 0 && (
-            <div style={{
-              background: "#1c0a0a", border: "1px solid #7f1d1d",
-              borderRadius: 4, padding: "4px 10px",
-              fontSize: 11, fontFamily: "IBM Plex Mono", color: "#ef4444",
-              animation: "blink 2s step-start infinite",
-            }}>
+            <div
+              role="alert"
+              aria-live="assertive"
+              style={{
+                background: "#1c0a0a", border: "1px solid #7f1d1d",
+                borderRadius: 4, padding: "4px 10px",
+                fontSize: 11, fontFamily: "IBM Plex Mono", color: "#ef4444",
+                animation: "blink 2s step-start infinite",
+              }}
+            >
               ⚠ {unackedCount} UNACKED ALERT{unackedCount > 1 ? "S" : ""}
             </div>
           )}
           <ConnectionBadge status={connectionStatus} />
-          <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: C.text2 }}>
+          <div style={{ fontSize: 10, fontFamily: "IBM Plex Mono", color: C.text2 }} aria-hidden="true">
             {new Date().toLocaleString()}
           </div>
         </div>
       </header>
 
-      <div style={{ padding: "20px 28px", display: "grid", gap: 16 }}>
+      <main style={{ padding: "20px 28px", display: "grid", gap: 16 }}>
 
         {/* ── Device Grid ──────────────────────────────────────────── */}
-        <div style={{ background: C.bg1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "14px 18px" }}>
+        <section aria-label="Devices" style={{ background: C.bg1, border: `1px solid ${C.border}`, borderRadius: 6, padding: "14px 18px" }}>
           <SectionHeader>DEVICES ({deviceList.length})</SectionHeader>
           {deviceList.length === 0
             ? <div style={{ fontSize: 12, fontFamily: "IBM Plex Mono", color: C.text2 }}>
@@ -214,7 +261,7 @@ export default function Dashboard() {
               </div>
             )
           }
-        </div>
+        </section>
 
         {/* ── Selected Device Detail ────────────────────────────────── */}
         {selectedId && (
@@ -224,7 +271,7 @@ export default function Dashboard() {
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
               {/* Metric cards */}
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <section aria-label="Live metrics" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <MetricCard
                   label="Vibration RMS"
                   value={latest?.vibration?.toFixed(4) ?? "—"}
@@ -256,7 +303,7 @@ export default function Dashboard() {
                   color="#a78bfa"
                   sublabel="live ring (120 max)"
                 />
-              </div>
+              </section>
 
               {/* Analytics overlay */}
               {showAnalysis && (vibAnalysis || tempAnalysis) && (
@@ -267,8 +314,8 @@ export default function Dashboard() {
               )}
 
               {/* View controls */}
-              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                <TabButton active={viewMode === "live"} onClick={() => setViewMode("live")}>
+              <div role="toolbar" aria-label="View controls" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                <TabButton active={viewMode === "live"} onClick={() => setViewMode("live")} label="Switch to live view">
                   ● Live
                 </TabButton>
                 {HISTORY_WINDOWS.map((w) => (
@@ -276,6 +323,7 @@ export default function Dashboard() {
                     key={w.minutes}
                     active={viewMode === "history" && historyMins === w.minutes}
                     onClick={() => { setViewMode("history"); setHistoryMins(w.minutes); }}
+                    label={`View ${w.label} history`}
                   >
                     ⏱ {w.label}
                   </TabButton>
@@ -283,6 +331,8 @@ export default function Dashboard() {
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
                   <button
                     onClick={() => setShowAnalysis((v) => !v)}
+                    aria-pressed={showAnalysis}
+                    aria-label={showAnalysis ? "Hide analysis overlay" : "Show analysis overlay"}
                     style={{
                       background: showAnalysis ? C.bg2 : "transparent",
                       border: `1px solid ${C.border}`, borderRadius: 4,
@@ -296,63 +346,85 @@ export default function Dashboard() {
               </div>
 
               {/* Vibration Chart */}
-              <div style={{
-                background: C.bg1,
-                border: `1px solid ${vibAnalysis?.isAnomaly ? "#7f1d1d" : C.border}`,
-                borderRadius: 6, padding: "16px 18px",
-                transition: "border-color 0.4s",
-              }}>
+              <section
+                aria-label="Vibration RMS chart"
+                style={{
+                  background: C.bg1,
+                  border: `1px solid ${vibAnalysis?.isAnomaly ? "#7f1d1d" : C.border}`,
+                  borderRadius: 6, padding: "16px 18px",
+                  transition: "border-color 0.4s",
+                }}
+              >
                 <SectionHeader>VIBRATION RMS (m/s²)</SectionHeader>
                 {loading
                   ? <Skeleton height={240} />
-                  : <VibrationChart
-                      data={chartData}
-                      showAvg
-                      baselineRef={vibAnalysis?.baseline}
-                    />
+                  : (
+                    <ChartErrorBoundary>
+                      <VibrationChart
+                        data={chartData}
+                        showAvg
+                        baselineRef={vibAnalysis?.baseline}
+                      />
+                    </ChartErrorBoundary>
+                  )
                 }
-              </div>
+              </section>
 
               {/* Temperature Chart */}
-              <div style={{
-                background: C.bg1,
-                border: `1px solid ${tempAnalysis?.isAnomaly ? "#7f1d1d" : C.border}`,
-                borderRadius: 6, padding: "16px 18px",
-                transition: "border-color 0.4s",
-              }}>
+              <section
+                aria-label="Temperature and humidity chart"
+                style={{
+                  background: C.bg1,
+                  border: `1px solid ${tempAnalysis?.isAnomaly ? "#7f1d1d" : C.border}`,
+                  borderRadius: 6, padding: "16px 18px",
+                  transition: "border-color 0.4s",
+                }}
+              >
                 <SectionHeader>TEMPERATURE (°C) + HUMIDITY (%)</SectionHeader>
                 {loading
                   ? <Skeleton height={240} />
-                  : <TemperatureChart
-                      data={chartData}
-                      tempWarningThreshold={TEMP_WARNING_THRESHOLD}
-                    />
+                  : (
+                    <ChartErrorBoundary>
+                      <TemperatureChart
+                        data={chartData}
+                        tempWarningThreshold={TEMP_WARNING_THRESHOLD}
+                      />
+                    </ChartErrorBoundary>
+                  )
                 }
-              </div>
+              </section>
             </div>
 
             {/* RIGHT COLUMN — Alerts */}
-            <div style={{
-              background: C.bg1, border: `1px solid ${C.border}`,
-              borderRadius: 6, padding: "16px 18px",
-              display: "flex", flexDirection: "column",
-              maxHeight: "calc(100vh - 160px)", overflow: "hidden",
-            }}>
+            <section
+              aria-label="Alerts panel"
+              aria-live="polite"
+              style={{
+                background: C.bg1, border: `1px solid ${C.border}`,
+                borderRadius: 6, padding: "16px 18px",
+                display: "flex", flexDirection: "column",
+                maxHeight: "calc(100vh - 160px)", overflow: "hidden",
+              }}
+            >
               <SectionHeader>ALERTS</SectionHeader>
               <AlertsPanel alerts={alerts} onAcknowledge={ackAlert} />
-            </div>
+            </section>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 }
 
 function Skeleton({ height }) {
   return (
-    <div style={{
-      height, background: "#0f1923", borderRadius: 4,
-      animation: "pulse 1.5s ease-in-out infinite",
-    }} />
+    <div
+      role="progressbar"
+      aria-label="Loading chart data"
+      style={{
+        height, background: "#0f1923", borderRadius: 4,
+        animation: "pulse 1.5s ease-in-out infinite",
+      }}
+    />
   );
 }

@@ -118,11 +118,18 @@ public sealed class AlertServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<Alert>> GetRecentAsync(int limit = 50, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<Alert>>(_alerts.Take(limit).ToList());
+        public Task<IReadOnlyList<Alert>> GetRecentAsync(int limit = 50, DateTimeOffset? before = null, CancellationToken ct = default)
+        {
+            var q = before.HasValue ? _alerts.Where(a => a.Timestamp < before.Value) : _alerts;
+            return Task.FromResult<IReadOnlyList<Alert>>(q.Take(limit).ToList());
+        }
 
-        public Task<IReadOnlyList<Alert>> GetByDeviceAsync(string deviceId, int limit = 50, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<Alert>>(_alerts.Where(a => a.DeviceId == deviceId).Take(limit).ToList());
+        public Task<IReadOnlyList<Alert>> GetByDeviceAsync(string deviceId, int limit = 50, DateTimeOffset? before = null, CancellationToken ct = default)
+        {
+            var q = _alerts.Where(a => a.DeviceId == deviceId);
+            if (before.HasValue) q = q.Where(a => a.Timestamp < before.Value);
+            return Task.FromResult<IReadOnlyList<Alert>>(q.Take(limit).ToList());
+        }
 
         public Task AcknowledgeAsync(Guid alertId, string by, CancellationToken ct = default)
         {

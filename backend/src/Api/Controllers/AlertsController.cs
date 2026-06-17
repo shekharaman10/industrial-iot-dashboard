@@ -28,18 +28,20 @@ public sealed class AlertsController : ControllerBase
     /// <summary>
     /// Get recent alerts across all devices, newest first.
     /// </summary>
-    /// <param name="limit">Max number of alerts to return (1–500, default 50).</param>
+    /// <param name="limit">Max number of alerts to return (1–200, default 50).</param>
+    /// <param name="before">Cursor for keyset pagination: ISO-8601 timestamp of the last item on the previous page.</param>
     [HttpGet]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetRecent(
-        [FromQuery] int limit = 50,
+        [FromQuery] int              limit  = 50,
+        [FromQuery] DateTimeOffset?  before = null,
         CancellationToken ct = default)
     {
-        if (limit is < 1 or > 500)
-            return BadRequest(new { error = "limit must be between 1 and 500." });
+        if (limit is < 1 or > 200)
+            return BadRequest(new { error = "limit must be between 1 and 200." });
 
-        var alerts = await _repo.GetRecentAsync(limit, ct);
+        var alerts = await _repo.GetRecentAsync(limit, before, ct);
         return Ok(alerts);
     }
 
@@ -91,7 +93,7 @@ public sealed class AlertsController : ControllerBase
     {
         // Fetch all unacknowledged alerts and ack them individually
         // In production, replace with a single bulk SQL UPDATE for efficiency
-        var unacked = await _repo.GetRecentAsync(500, ct);
+        var unacked = await _repo.GetRecentAsync(200, null, ct);
         var toAck   = unacked.Where(a => !a.Acknowledged).ToList();
 
         var tasks = toAck.Select(a => _repo.AcknowledgeAsync(a.Id, acknowledgedBy, ct));

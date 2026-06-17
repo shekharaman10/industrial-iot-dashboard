@@ -71,41 +71,57 @@ public sealed class PostgresAlertRepository : IAlertRepository
     }
 
     public async Task<IReadOnlyList<Alert>> GetRecentAsync(
-        int limit = 50, CancellationToken ct = default)
+        int limit = 50, DateTimeOffset? before = null, CancellationToken ct = default)
     {
-        const string sql = @"
-            SELECT id, device_id AS DeviceId, severity, type, message,
-                   measured_value AS MeasuredValue, threshold_value AS ThresholdValue,
-                   z_score AS ZScore, timestamp, acknowledged,
-                   acknowledged_at AS AcknowledgedAt, acknowledged_by AS AcknowledgedBy
-            FROM alerts
-            ORDER BY timestamp DESC
-            LIMIT @Limit;
-        ";
+        // Keyset pagination on timestamp: avoids OFFSET drift when new alerts arrive between pages.
+        // Pass the timestamp of the last row from the previous page as `before`.
+        var sql = before.HasValue
+            ? @"SELECT id, device_id AS DeviceId, severity, type, message,
+                       measured_value AS MeasuredValue, threshold_value AS ThresholdValue,
+                       z_score AS ZScore, timestamp, acknowledged,
+                       acknowledged_at AS AcknowledgedAt, acknowledged_by AS AcknowledgedBy
+                FROM alerts
+                WHERE timestamp < @Before
+                ORDER BY timestamp DESC
+                LIMIT @Limit;"
+            : @"SELECT id, device_id AS DeviceId, severity, type, message,
+                       measured_value AS MeasuredValue, threshold_value AS ThresholdValue,
+                       z_score AS ZScore, timestamp, acknowledged,
+                       acknowledged_at AS AcknowledgedAt, acknowledged_by AS AcknowledgedBy
+                FROM alerts
+                ORDER BY timestamp DESC
+                LIMIT @Limit;";
 
         await using var conn = new NpgsqlConnection(_connStr);
         await conn.OpenAsync(ct);
-        var rows = await conn.QueryAsync<AlertRow>(sql, new { Limit = limit });
+        var rows = await conn.QueryAsync<AlertRow>(sql, new { Limit = limit, Before = before });
         return rows.Select(MapRow).ToList();
     }
 
     public async Task<IReadOnlyList<Alert>> GetByDeviceAsync(
-        string deviceId, int limit = 50, CancellationToken ct = default)
+        string deviceId, int limit = 50, DateTimeOffset? before = null, CancellationToken ct = default)
     {
-        const string sql = @"
-            SELECT id, device_id AS DeviceId, severity, type, message,
-                   measured_value AS MeasuredValue, threshold_value AS ThresholdValue,
-                   z_score AS ZScore, timestamp, acknowledged,
-                   acknowledged_at AS AcknowledgedAt, acknowledged_by AS AcknowledgedBy
-            FROM alerts
-            WHERE device_id = @DeviceId
-            ORDER BY timestamp DESC
-            LIMIT @Limit;
-        ";
+        var sql = before.HasValue
+            ? @"SELECT id, device_id AS DeviceId, severity, type, message,
+                       measured_value AS MeasuredValue, threshold_value AS ThresholdValue,
+                       z_score AS ZScore, timestamp, acknowledged,
+                       acknowledged_at AS AcknowledgedAt, acknowledged_by AS AcknowledgedBy
+                FROM alerts
+                WHERE device_id = @DeviceId AND timestamp < @Before
+                ORDER BY timestamp DESC
+                LIMIT @Limit;"
+            : @"SELECT id, device_id AS DeviceId, severity, type, message,
+                       measured_value AS MeasuredValue, threshold_value AS ThresholdValue,
+                       z_score AS ZScore, timestamp, acknowledged,
+                       acknowledged_at AS AcknowledgedAt, acknowledged_by AS AcknowledgedBy
+                FROM alerts
+                WHERE device_id = @DeviceId
+                ORDER BY timestamp DESC
+                LIMIT @Limit;";
 
         await using var conn = new NpgsqlConnection(_connStr);
         await conn.OpenAsync(ct);
-        var rows = await conn.QueryAsync<AlertRow>(sql, new { DeviceId = deviceId, Limit = limit });
+        var rows = await conn.QueryAsync<AlertRow>(sql, new { DeviceId = deviceId, Limit = limit, Before = before });
         return rows.Select(MapRow).ToList();
     }
 

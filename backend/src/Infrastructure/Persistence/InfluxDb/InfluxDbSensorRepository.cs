@@ -91,9 +91,17 @@ public sealed class InfluxDbSensorRepository : ISensorRepository
         }
     }
 
+    // Only allow alphanumeric characters, hyphens, and underscores in deviceId
+    // to prevent Flux query injection via the interpolated filter clause.
+    private static readonly System.Text.RegularExpressions.Regex DeviceIdPattern =
+        new(@"^[a-zA-Z0-9_\-]{1,64}$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
     public async Task<IReadOnlyList<SensorReading>> QueryAsync(
         string deviceId, TimeSpan window, CancellationToken ct = default)
     {
+        if (!DeviceIdPattern.IsMatch(deviceId))
+            throw new ArgumentException($"Invalid deviceId format: '{deviceId}'", nameof(deviceId));
+
         var queryApi = _client.GetQueryApi();
         int minutes  = (int)Math.Ceiling(window.TotalMinutes);
 

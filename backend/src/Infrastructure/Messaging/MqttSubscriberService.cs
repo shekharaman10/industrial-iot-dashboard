@@ -105,19 +105,37 @@ public sealed class MqttSubscriberService : BackgroundService
             await Task.CompletedTask;
         };
 
-        await _client.ConnectAsync(options, ct);
+        var connectResult = await _client.ConnectAsync(options, ct);
         _reconnectAttempts = 0;
 
-        _logger.LogInformation("[MQTT] Connected to {Host}:{Port}", _opts.Host, _opts.Port);
+        // If sessionPresent is false after reconnecting with CleanSession=false,
+        // the broker discarded our QoS-1 queue (e.g. broker restart or 24h session TTL).
+        // Telemetry published while we were disconnected is permanently lost.
+        if (!connectResult.IsSessionPresent)
+            _logger.LogWarning(
+                "[MQTT] Session not resumed (sessionPresent=false) — QoS-1 messages " +
+                "queued during disconnection have been lost. Broker may have restarted.");
+
+        _logger.LogInformation("[MQTT] Connected to {Host}:{Port} (sessionPresent={Present})",
+            _opts.Host, _opts.Port, connectResult.IsSessionPresent);
 
         // Subscribe with wildcard to catch all current and future devices
-        await _client.SubscribeAsync(
+        var subResult = await _client.SubscribeAsync(
             new MqttTopicFilterBuilder()
                 .WithTopic(Topics.TelemetryPattern)
                 .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
                 .Build(), ct);
 
-        _logger.LogInformation("[MQTT] Subscribed to: {Pattern}", Topics.TelemetryPattern);
+        // Verify subscription was accepted by the broker
+        var subItem = subResult.Items.FirstOrDefault();
+        if (subItem is null || (int)subItem.ResultCode > 2)
+            _logger.LogError(
+                "[MQTT] Subscription to {Pattern} was rejected by broker (code: {Code}). " +
+                "No telemetry will be received.",
+                Topics.TelemetryPattern, subItem?.ResultCode);
+        else
+            _logger.LogInformation("[MQTT] Subscribed to: {Pattern} (QoS granted: {Code})",
+                Topics.TelemetryPattern, subItem.ResultCode);
 
         // Announce backend is alive
         await _client.PublishAsync(

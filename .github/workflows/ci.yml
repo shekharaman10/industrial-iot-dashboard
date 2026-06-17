@@ -16,21 +16,32 @@ jobs:
 
   # ── Backend: Build + Test ────────────────────────────────────────────────────
   backend:
-    name: Backend (.NET 8)
+    name: Backend (.NET 10)
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .NET 8
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/IotDashboard.Api.csproj', '**/IotDashboard.Tests.*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
 
       - name: Restore NuGet packages
         working-directory: backend
         run: dotnet restore IotDashboard.sln
+
+      - name: Check for vulnerable packages
+        working-directory: backend
+        run: dotnet list package --vulnerable --include-transitive 2>&1 | tee /tmp/vuln-report.txt; grep -q "has the following vulnerable packages" /tmp/vuln-report.txt && echo "::warning::Vulnerable NuGet packages detected — review /tmp/vuln-report.txt" || true
 
       - name: Build (Release)
         working-directory: backend
@@ -41,6 +52,7 @@ jobs:
         run: |
           dotnet test tests/UnitTests/IotDashboard.Tests.UnitTests.csproj \
             -c Release \
+            --no-build \
             --logger "trx;LogFileName=unit-results.trx" \
             --collect:"XPlat Code Coverage"
 
@@ -49,6 +61,7 @@ jobs:
         run: |
           dotnet test tests/IntegrationTests/IotDashboard.Tests.IntegrationTests.csproj \
             -c Release \
+            --no-build \
             --logger "trx;LogFileName=integration-results.trx"
 
       - name: Publish test results
@@ -77,10 +90,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
         working-directory: frontend
         run: npm install
+
+      - name: Audit for vulnerabilities
+        working-directory: frontend
+        run: npm audit --audit-level=high || echo "::warning::npm audit found high/critical vulnerabilities"
 
       - name: Lint
         working-directory: frontend

@@ -1,3 +1,4 @@
+using System.Text;
 using System.Threading.Channels;
 using IotDashboard.Api.Hubs;
 using IotDashboard.Api.Middleware;
@@ -11,7 +12,9 @@ using IotDashboard.Infrastructure.Messaging;
 using IotDashboard.Infrastructure.Persistence.InfluxDb;
 using IotDashboard.Infrastructure.Persistence.Postgres;
 using IotDashboard.Worker;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,6 +25,8 @@ builder.AddSerilog();
 builder.Services.Configure<MqttOptions>(builder.Configuration.GetSection("Mqtt"));
 builder.Services.Configure<InfluxDbOptions>(builder.Configuration.GetSection("InfluxDb"));
 builder.Services.Configure<PostgresOptions>(builder.Configuration.GetSection("Postgres"));
+builder.Services.Configure<AnalyticsEngineOptions>(
+    builder.Configuration.GetSection(AnalyticsEngineOptions.Section));
 
 // ─── Channel 1: MQTT raw messages → IngestionWorker ───────────────────────────
 var mqttChannel = Channel.CreateBounded<TelemetryMessage>(new BoundedChannelOptions(2000)
@@ -59,16 +64,78 @@ builder.Services.AddHostedService<MqttSubscriberService>();
 builder.Services.AddHostedService<IngestionWorker>();
 builder.Services.AddHostedService<ProcessingWorker>();
 
+// ─── JWT Authentication ───────────────────────────────────────────────────────
+var jwtSecret   = builder.Configuration["Jwt:Secret"]
+    ?? throw new InvalidOperationException("Jwt:Secret is required. Set it in .env or appsettings.");
+var jwtIssuer   = builder.Configuration["Jwt:Issuer"]   ?? "iot-dashboard";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "iot-dashboard-clients";
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer           = true,
+            ValidateAudience         = true,
+            ValidateLifetime         = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer              = jwtIssuer,
+            ValidAudience            = jwtAudience,
+            IssuerSigningKey         = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+            ClockSkew                = TimeSpan.FromSeconds(30),
+        };
+        // SignalR sends the token as query string ?access_token=…
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = ctx =>
+            {
+                var token = ctx.Request.Query["access_token"];
+                if (!string.IsNullOrEmpty(token) &&
+                    ctx.HttpContext.Request.Path.StartsWithSegments("/hubs"))
+                    ctx.Token = token;
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorization();
+
 // ─── API + Swagger ────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
+{
     c.SwaggerDoc("v1", new()
     {
         Title       = "Industrial IoT Dashboard API",
         Version     = "v1",
         Description = "REST endpoints for sensor history, devices, and alert management.",
-    }));
+    });
+    // Add JWT bearer input to Swagger UI
+    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name         = "Authorization",
+        Type         = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme       = "bearer",
+        BearerFormat = "JWT",
+        In           = Microsoft.OpenApi.Models.ParameterLocation.Header,
+    });
+    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id   = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
 
 // ─── SignalR ──────────────────────────────────────────────────────────────────
 builder.Services.AddSignalR(o =>
@@ -86,8 +153,8 @@ var allowedOrigins = builder.Configuration
 builder.Services.AddCors(opts =>
     opts.AddDefaultPolicy(p =>
         p.WithOrigins(allowedOrigins)
-         .AllowAnyHeader()
-         .AllowAnyMethod()
+         .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+         .WithHeaders("content-type", "authorization", "x-requested-with")
          .AllowCredentials()));
 
 // ─── Health Checks ────────────────────────────────────────────────────────────
@@ -124,8 +191,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors();
 app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
-app.MapHub<SensorHub>("/hubs/sensors");
+app.MapHub<SensorHub>("/hubs/sensors").RequireAuthorization();
 app.MapHealthChecks("/health");
 app.MapHealthChecks("/health/ready",
     new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
@@ -138,8 +207,7 @@ app.MapGet("/", () => app.Environment.IsDevelopment()
 
 app.Run();
 
-// ─── Inline InfluxDB health check ─────────────────────────────────────────────
-// Avoids the AspNetCore.HealthChecks.Uris package dependency
+// ─── Inline health checks ─────────────────────────────────────────────────────
 internal sealed class PostgresHealthCheck : IHealthCheck
 {
     private readonly string _connStr;

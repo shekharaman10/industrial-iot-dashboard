@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSignalR } from "./useSignalR";
-import { fetchHistory, fetchAlerts } from "../services/api";
+import { fetchHistory, fetchAlerts, acknowledgeAlert } from "../services/api";
 import { MAX_LIVE_POINTS, MAX_ALERTS_IN_MEMORY } from "../utils/constants";
 
 /**
@@ -8,7 +8,7 @@ import { MAX_LIVE_POINTS, MAX_ALERTS_IN_MEMORY } from "../utils/constants";
  * Single source of truth for all sensor data in the dashboard.
  *
  * Combines:
- *   - SignalR live stream → liveReadings ring buffer + devices map
+ *   - SignalR live stream → liveReadings circular buffer + devices map
  *   - REST history fetch  → historical chart data on device/window change
  *   - Alert stream        → prepended to alerts array (max 100 in memory)
  *
@@ -17,6 +17,12 @@ import { MAX_LIVE_POINTS, MAX_ALERTS_IN_MEMORY } from "../utils/constants";
  */
 export function useSensorData(selectedDeviceId, historyMinutes = 60) {
   const { status, on } = useSignalR();
+
+  // Circular ring buffer stored in a ref — avoids allocating a new array on
+  // every 2 Hz tick. Exposed as state only when the buffer changes length.
+  const ringRef   = useRef(new Array(MAX_LIVE_POINTS).fill(null));
+  const headRef   = useRef(0);   // next write position
+  const sizeRef   = useRef(0);   // number of valid entries
 
   const [liveReadings, setLiveReadings] = useState([]);
   const [history,      setHistory]      = useState([]);
@@ -28,6 +34,19 @@ export function useSensorData(selectedDeviceId, historyMinutes = 60) {
   const selectedRef = useRef(selectedDeviceId);
   useEffect(() => { selectedRef.current = selectedDeviceId; }, [selectedDeviceId]);
 
+  // Helper: read the ring buffer out in insertion order
+  const drainRing = useCallback(() => {
+    const ring = ringRef.current;
+    const size = sizeRef.current;
+    if (size === 0) return [];
+    const head = headRef.current;
+    const result = new Array(size);
+    for (let i = 0; i < size; i++) {
+      result[i] = ring[(head - size + i + MAX_LIVE_POINTS) % MAX_LIVE_POINTS];
+    }
+    return result;
+  }, []);
+
   // ── Live telemetry ─────────────────────────────────────────────────────────
   useEffect(() => {
     on("TelemetryReceived", (frame) => {
@@ -37,12 +56,15 @@ export function useSensorData(selectedDeviceId, historyMinutes = 60) {
       // Only append to live ring for selected device
       if (frame.deviceId !== selectedRef.current) return;
 
-      setLiveReadings((prev) => {
-        const next = [...prev, { ...frame, _ts: Date.now() }];
-        return next.length > MAX_LIVE_POINTS ? next.slice(-MAX_LIVE_POINTS) : next;
-      });
+      // Write into the ring buffer (overwrites oldest entry when full)
+      ringRef.current[headRef.current] = { ...frame, _ts: Date.now() };
+      headRef.current = (headRef.current + 1) % MAX_LIVE_POINTS;
+      if (sizeRef.current < MAX_LIVE_POINTS) sizeRef.current++;
+
+      // Trigger re-render with a stable-identity snapshot
+      setLiveReadings(drainRing());
     });
-  }, [on]);
+  }, [on, drainRing]);
 
   // ── Live alerts ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -55,27 +77,40 @@ export function useSensorData(selectedDeviceId, historyMinutes = 60) {
   useEffect(() => {
     if (!selectedDeviceId) return;
 
-    setLiveReadings([]);   // clear live buffer on device switch
+    // Reset ring buffer on device switch
+    ringRef.current.fill(null);
+    headRef.current = 0;
+    sizeRef.current = 0;
+    setLiveReadings([]);
     setLoading(true);
 
+    // AbortController cancels in-flight fetches if the component unmounts or
+    // the selected device changes before the response arrives.
+    const controller = new AbortController();
+    const { signal } = controller;
+
     Promise.all([
-      fetchHistory(selectedDeviceId, historyMinutes),
-      fetchAlerts(50),
+      fetchHistory(selectedDeviceId, historyMinutes, signal),
+      fetchAlerts(50, signal),
     ])
       .then(([hist, alertData]) => {
         setHistory(hist ?? []);
         setAlerts(alertData ?? []);
       })
       .catch((err) => {
+        if (err.name === "AbortError") return;   // unmounted — ignore
         console.error("[useSensorData] fetch failed:", err);
         setHistory([]);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
   }, [selectedDeviceId, historyMinutes]);
 
   // ── Acknowledge alert ──────────────────────────────────────────────────────
   const ackAlert = useCallback(async (alertId) => {
-    const { acknowledgeAlert } = await import("../services/api");
     await acknowledgeAlert(alertId);
     setAlerts((prev) =>
       prev.map((a) => a.id === alertId ? { ...a, acknowledged: true } : a)

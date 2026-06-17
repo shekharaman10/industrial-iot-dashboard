@@ -1,13 +1,21 @@
 using IotDashboard.Application.Services;
 using IotDashboard.Domain.Entities;
 using IotDashboard.Domain.Enums;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace IotDashboard.Tests.UnitTests;
 
 public sealed class AnalyticsEngineTests
 {
-    private readonly AnalyticsEngine _engine = new();
+    private static AnalyticsEngine CreateEngine(Action<AnalyticsEngineOptions>? configure = null)
+    {
+        var opts = new AnalyticsEngineOptions();
+        configure?.Invoke(opts);
+        return new AnalyticsEngine(Options.Create(opts));
+    }
+
+    private readonly AnalyticsEngine _engine = CreateEngine();
 
     [Fact]
     public void Evaluate_ReturnsNoAnomaly_WhenInsufficientData()
